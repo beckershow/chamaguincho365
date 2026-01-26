@@ -5,17 +5,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import { Mail, Lock, Eye, EyeOff, Shield } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Shield, User, Truck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
+import { useToast } from "@/hooks/use-toast";
 import logoChama from "@/assets/logo-chama365.png";
+
+type LoginType = "cliente" | "guincheiro";
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, loginAsDriver } = useAuth();
+  const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [loginType, setLoginType] = useState<LoginType>("cliente");
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -24,30 +28,65 @@ const Login = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
-    const success = await login(formData.email, formData.password);
-    
-    if (success) {
-      toast.success("Login realizado com sucesso!");
-      navigate("/");
+
+    let result;
+
+    if (loginType === "guincheiro") {
+      result = await loginAsDriver(formData.email, formData.password);
     } else {
-      toast.error("E-mail ou senha inválidos. Use: teste@gmail.com ou guincho@gmail.com / senha: 123");
+      result = await login(formData.email, formData.password);
     }
-    
+
+    if (result.success) {
+      toast({
+        title: "Login realizado com sucesso!",
+        description: loginType === "guincheiro"
+          ? "Bem-vindo, guincheiro! Você será redirecionado..."
+          : "Você será redirecionado...",
+      });
+      setTimeout(() => {
+        navigate("/");
+      }, 1000);
+    } else {
+      // Extrair mensagem de erro da resposta da API
+      const errorMessage = result.error?.message || result.error || "E-mail ou senha inválidos. Verifique seus dados e tente novamente.";
+      toast({
+        title: "Erro no login",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+
     setIsLoading(false);
   };
 
   const handleGoogleLogin = () => {
     // TODO: Implement Google OAuth
-    console.log("Google login clicked");
+    toast({
+      title: "Em desenvolvimento",
+      description: "Login com Google será implementado em breve.",
+    });
   };
 
   const handleAdminLogin = async () => {
     setIsLoading(true);
-    const success = await login('admin@chama365.com', 'admin123');
-    if (success) {
-      toast.success("Login de administrador realizado!");
-      navigate("/admin");
+    const result = await login('admin@chama365.com', 'admin123');
+    if (result.success) {
+      toast({
+        title: "Login de administrador realizado!",
+        description: "Você será redirecionado...",
+      });
+      setTimeout(() => {
+        navigate("/admin");
+      }, 1000);
+    } else {
+      // Extrair mensagem de erro da resposta da API
+      const errorMessage = result.error?.message || result.error || "Credenciais de administrador inválidas.";
+      toast({
+        title: "Erro no login",
+        description: errorMessage,
+        variant: "destructive",
+      });
     }
     setIsLoading(false);
   };
@@ -66,6 +105,37 @@ const Login = () => {
 
         {/* Login Form */}
         <div className="bg-card border border-border rounded-xl p-6 shadow-lg">
+          {/* Login Type Selection */}
+          <div className="space-y-3 mb-6">
+            <Label>Entrar como</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setLoginType("cliente")}
+                className={`p-4 rounded-lg border-2 transition-all flex flex-col items-center gap-2 ${
+                  loginType === "cliente"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/50"
+                }`}
+              >
+                <User className="h-8 w-8" />
+                <span className="font-medium">Usuário</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginType("guincheiro")}
+                className={`p-4 rounded-lg border-2 transition-all flex flex-col items-center gap-2 ${
+                  loginType === "guincheiro"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/50"
+                }`}
+              >
+                <Truck className="h-8 w-8" />
+                <span className="font-medium">Guincheiro</span>
+              </button>
+            </div>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email */}
             <div className="space-y-2">

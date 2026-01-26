@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,26 +6,31 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mail, Lock, Eye, EyeOff, Phone, FileText, Truck, User, CreditCard, Car, Calendar, Palette, Camera, Upload } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Phone, FileText, Truck, User, CreditCard, Car, Calendar, Palette } from "lucide-react";
 import logoChama from "@/assets/logo-chama365.png";
+import { apiService } from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 type UserType = "cliente" | "guincheiro" | null;
 
 const tiposVeiculo = [
-  { value: "plataforma", label: "Plataforma" },
-  { value: "asa_delta", label: "Asa Delta" },
-  { value: "reboque", label: "Reboque" },
-  { value: "pesado", label: "Pesado (Caminhões/Ônibus)" },
-  { value: "moto", label: "Moto" },
+  { value: "Reboque", label: "Reboque" },
+  { value: "Pesado", label: "Pesado" },
+  { value: "Plataforma", label: "Plataforma" },
 ];
 
 const Cadastro = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [userType, setUserType] = useState<UserType>(null);
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
+    name: "",
     email: "",
     phone: "",
     document: "",
@@ -43,13 +48,6 @@ const Cadastro = () => {
     cor: "",
   });
 
-  // Photo uploads
-  const [fotoCNH, setFotoCNH] = useState<File | null>(null);
-  const [fotoPessoa, setFotoPessoa] = useState<File | null>(null);
-  const [previewCNH, setPreviewCNH] = useState<string | null>(null);
-  const [previewPessoa, setPreviewPessoa] = useState<string | null>(null);
-  const cnhInputRef = useRef<HTMLInputElement>(null);
-  const pessoaInputRef = useRef<HTMLInputElement>(null);
 
   const formatPhone = (value: string) => {
     const numbers = value.replace(/\D/g, "");
@@ -88,45 +86,187 @@ const Cadastro = () => {
     return value;
   };
 
-  const handlePhotoUpload = (file: File, type: "cnh" | "pessoa") => {
-    if (file && file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (type === "cnh") {
-          setFotoCNH(file);
-          setPreviewCNH(reader.result as string);
-        } else {
-          setFotoPessoa(file);
-          setPreviewPessoa(reader.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!acceptTerms) {
-      alert("Você precisa aceitar os Termos de Uso e Política de Privacidade");
+      toast({
+        title: "Termos não aceitos",
+        description: "Você precisa aceitar os Termos de Uso e Política de Privacidade",
+        variant: "destructive",
+      });
       return;
     }
+
+    if (formData.password.length < 8) {
+      toast({
+        title: "Senha muito curta",
+        description: "A senha deve conter no mínimo 8 caracteres",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
-      alert("As senhas não coincidem");
+      toast({
+        title: "Senhas não coincidem",
+        description: "As senhas digitadas não são iguais",
+        variant: "destructive",
+      });
       return;
     }
-    if (userType === "guincheiro") {
-      if (!fotoCNH || !fotoPessoa) {
-        alert("Por favor, envie as fotos da CNH e pessoal");
-        return;
+
+    setIsLoading(true);
+
+    try {
+      // Formatar telefone para padrão internacional
+      const phoneNumbers = formData.phone.replace(/\D/g, "");
+      const internationalPhone = `+55${phoneNumbers}`;
+
+      // Remover formatação do documento (apenas números)
+      const documentNumbers = formData.document.replace(/\D/g, "");
+      const documentType = documentNumbers.length <= 11 ? "CPF" : "CNPJ";
+
+      if (userType === "guincheiro") {
+        // Preparar dados do guincheiro no formato esperado pela API
+        const driverData = {
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          phone: phoneNumbers, // Apenas números, sem +55
+          cpf: documentNumbers, // Apenas números, sem formatação
+          cnh_number: guincheiro.cnh,
+          vehicle_plate: guincheiro.placa,
+          vehicle_model: guincheiro.modelo,
+          vehicle_year: parseInt(guincheiro.ano) || new Date().getFullYear(),
+          vehicle_type: guincheiro.tipo, // Enviar com primeira letra maiúscula: Reboque, Pesado ou Plataforma
+          vehicle_color: guincheiro.cor,
+        };
+
+        console.log("Enviando dados do guincheiro:", driverData);
+
+        const result = await apiService.registerDriver(driverData);
+
+        if (result.success) {
+          // Acessar dados dentro de result.data se existir
+          const responseData = (result as any).data;
+          const driver = responseData?.driver || result.driver;
+
+          // Armazenar dados do guincheiro
+          if (driver) {
+            localStorage.setItem('driver_data', JSON.stringify(driver));
+          }
+
+          toast({
+            title: "Cadastro realizado com sucesso!",
+            description: "Seu cadastro está em análise. Você receberá uma notificação quando for aprovado.",
+          });
+
+          setTimeout(() => {
+            navigate("/login");
+          }, 2000);
+        } else {
+          // Extrair mensagem de erro da resposta da API
+          const errorMessage = result.error?.message || result.error || "Não foi possível realizar o cadastro. Tente novamente.";
+          toast({
+            title: "Erro no cadastro",
+            description: errorMessage,
+            variant: "destructive",
+          });
+        }
+      } else {
+        // Cadastro de usuário comum
+        const registerData = {
+          email: formData.email,
+          password: formData.password,
+          phone_number: internationalPhone,
+          display_name: formData.name,
+          cpf_cnpj: formData.document,
+        };
+
+        console.log("Enviando dados:", registerData);
+
+        const result = await apiService.registerUser(registerData);
+
+        if (result.success) {
+          // Acessar dados dentro de result.data se existir
+          const responseData = (result as any).data;
+          const userData = responseData?.user || result.user;
+          const accessToken = responseData?.accessToken || result.accessToken;
+          const refreshToken = responseData?.refreshToken || result.refreshToken;
+          const token = responseData?.token || result.token;
+
+          // Armazenar tokens
+          if (accessToken || refreshToken || token) {
+            apiService.storeAuthTokens(accessToken, refreshToken, token);
+          }
+
+          // Armazenar dados do usuário
+          if (userData) {
+            const userDataToStore = {
+              id: userData.id.toString(),
+              uid: userData.uid,
+              email: userData.email,
+              name: userData.display_name,
+              phone_number: userData.phone_number,
+              cpf_cnpj: userData.cpf_cnpj,
+              photo_url: userData.photo_url,
+              email_verified: userData.email_verified,
+              created_at: userData.created_at,
+            };
+            localStorage.setItem('user_data', JSON.stringify(userDataToStore));
+          }
+
+          toast({
+            title: "Cadastro realizado com sucesso!",
+            description: "Fazendo login automaticamente...",
+          });
+
+          // Fazer login automático com as credenciais recém-cadastradas
+          setTimeout(async () => {
+            const loginResult = await login(formData.email, formData.password);
+
+            if (loginResult.success) {
+              toast({
+                title: "Login realizado!",
+                description: "Você está conectado e será redirecionado para a página inicial.",
+              });
+
+              // Redirecionar para a página inicial
+              setTimeout(() => {
+                navigate("/");
+              }, 1500);
+            } else {
+              // Se o login automático falhar, redirecionar para login manual
+              toast({
+                title: "Cadastro concluído",
+                description: "Por favor, faça login com suas credenciais.",
+              });
+              setTimeout(() => {
+                navigate("/login");
+              }, 1500);
+            }
+          }, 1000);
+        } else {
+          // Extrair mensagem de erro da resposta da API
+          const errorMessage = result.error?.message || result.error || "Não foi possível realizar o cadastro. Tente novamente.";
+          toast({
+            title: "Erro no cadastro",
+            description: errorMessage,
+            variant: "destructive",
+          });
+        }
       }
+    } catch (error) {
+      console.error("Erro ao registrar:", error);
+      toast({
+        title: "Erro inesperado",
+        description: "Ocorreu um erro ao processar seu cadastro. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
-    // TODO: Implement registration logic with endpoint
-    console.log("Registration data:", { 
-      ...formData, 
-      userType, 
-      acceptTerms,
-      ...(userType === "guincheiro" && { guincheiro, fotoCNH, fotoPessoa })
-    });
   };
 
   const handleGoogleRegister = () => {
@@ -188,6 +328,23 @@ const Cadastro = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Nome */}
+            <div className="space-y-2">
+              <Label htmlFor="name">Nome Completo</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="name"
+                  type="text"
+                  placeholder="Seu nome completo"
+                  className="pl-10"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+
             {/* Email */}
             <div className="space-y-2">
               <Label htmlFor="email">E-mail</Label>
@@ -353,69 +510,6 @@ const Cadastro = () => {
                   </div>
                 </div>
 
-                {/* Photo Uploads */}
-                <div className="space-y-4 pt-4 border-t border-border">
-                  <h3 className="font-semibold text-foreground flex items-center gap-2">
-                    <Camera className="h-5 w-5 text-primary" />
-                    Documentos e Fotos
-                  </h3>
-
-                  {/* Foto CNH */}
-                  <div className="space-y-2">
-                    <Label>Foto da CNH</Label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      ref={cnhInputRef}
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handlePhotoUpload(file, "cnh");
-                      }}
-                    />
-                    <div 
-                      onClick={() => cnhInputRef.current?.click()}
-                      className="border-2 border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors flex flex-col items-center justify-center min-h-[120px]"
-                    >
-                      {previewCNH ? (
-                        <img src={previewCNH} alt="Preview CNH" className="max-h-24 rounded-md object-cover" />
-                      ) : (
-                        <>
-                          <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                          <span className="text-sm text-muted-foreground">Clique para enviar foto da CNH</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Foto Pessoa */}
-                  <div className="space-y-2">
-                    <Label>Foto Pessoal</Label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      ref={pessoaInputRef}
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handlePhotoUpload(file, "pessoa");
-                      }}
-                    />
-                    <div 
-                      onClick={() => pessoaInputRef.current?.click()}
-                      className="border-2 border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors flex flex-col items-center justify-center min-h-[120px]"
-                    >
-                      {previewPessoa ? (
-                        <img src={previewPessoa} alt="Preview Pessoal" className="max-h-24 rounded-md object-cover" />
-                      ) : (
-                        <>
-                          <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                          <span className="text-sm text-muted-foreground">Clique para enviar foto pessoal</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
 
@@ -432,7 +526,7 @@ const Cadastro = () => {
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   required
-                  minLength={6}
+                  minLength={8}
                 />
                 <button
                   type="button"
@@ -457,7 +551,7 @@ const Cadastro = () => {
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                   required
-                  minLength={6}
+                  minLength={8}
                 />
                 <button
                   type="button"
@@ -490,13 +584,13 @@ const Cadastro = () => {
             </div>
 
             {/* Submit Button */}
-            <Button 
-              type="submit" 
-              className="w-full" 
+            <Button
+              type="submit"
+              className="w-full"
               size="lg"
-              disabled={!userType}
+              disabled={!userType || isLoading}
             >
-              Criar conta
+              {isLoading ? "Criando conta..." : "Criar conta"}
             </Button>
           </form>
 

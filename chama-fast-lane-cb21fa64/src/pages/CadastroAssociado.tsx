@@ -24,10 +24,9 @@ const estados = [
 ];
 
 const tiposGuincho = [
-  { value: 'plataforma', label: 'Plataforma' },
-  { value: 'reboque_leve', label: 'Reboque Leve' },
-  { value: 'munck', label: 'Munck' },
-  { value: 'pesado', label: 'Pesado (caminhões)' },
+  { value: 'Reboque', label: 'Reboque' },
+  { value: 'Pesado', label: 'Pesado' },
+  { value: 'Plataforma', label: 'Plataforma' },
 ];
 
 export default function CadastroAssociado() {
