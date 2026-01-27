@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,8 @@ const tiposVeiculo = [
 
 const Cadastro = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const planCode = searchParams.get('plan');
   const { toast } = useToast();
   const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
@@ -229,12 +231,18 @@ const Cadastro = () => {
             if (loginResult.success) {
               toast({
                 title: "Login realizado!",
-                description: "Você está conectado e será redirecionado para a página inicial.",
+                description: planCode
+                  ? "Você está conectado e será redirecionado para finalizar sua assinatura."
+                  : "Você está conectado e será redirecionado para a página inicial.",
               });
 
-              // Redirecionar para a página inicial
+              // Redirecionar para checkout do plano ou página inicial
               setTimeout(() => {
-                navigate("/");
+                if (planCode && (planCode === 'BASICO' || planCode === 'INTERMEDIARIO')) {
+                  navigate(`/planos/checkout/${planCode}`);
+                } else {
+                  navigate("/");
+                }
               }, 1500);
             } else {
               // Se o login automático falhar, redirecionar para login manual
@@ -243,7 +251,8 @@ const Cadastro = () => {
                 description: "Por favor, faça login com suas credenciais.",
               });
               setTimeout(() => {
-                navigate("/login");
+                const redirectPath = planCode ? `/login?redirect=/planos/checkout/${planCode}` : '/login';
+                navigate(redirectPath);
               }, 1500);
             }
           }, 1000);
@@ -290,6 +299,13 @@ const Cadastro = () => {
           <p className="text-muted-foreground text-center">
             Escolha o tipo de conta e preencha seus dados
           </p>
+          {planCode && (
+            <div className="mt-3 px-4 py-2 bg-primary/10 border border-primary/20 rounded-lg">
+              <p className="text-sm text-primary font-medium">
+                Você será direcionado para assinar o Plano {planCode === 'BASICO' ? 'Básico' : 'Intermediário'}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Registration Form */}

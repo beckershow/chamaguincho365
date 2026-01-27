@@ -864,10 +864,16 @@ export function UserMenu() {
             </>
           )}
           {!isAdmin && (
-            <DropdownMenuItem onClick={() => setIsProfileOpen(true)} className="cursor-pointer">
-              <UserIcon className="mr-2 h-4 w-4" />
-              <span>Editar Perfil</span>
-            </DropdownMenuItem>
+            <>
+              <DropdownMenuItem onClick={() => navigate('/perfil')} className="cursor-pointer">
+                <UserIcon className="mr-2 h-4 w-4" />
+                <span>Meu Perfil</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setIsProfileOpen(true)} className="cursor-pointer">
+                <UserIcon className="mr-2 h-4 w-4" />
+                <span>Editar Perfil Completo</span>
+              </DropdownMenuItem>
+            </>
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive focus:text-destructive">

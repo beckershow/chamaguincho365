@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Admin from "./pages/Admin";
@@ -12,6 +13,8 @@ import EsqueciSenha from "./pages/EsqueciSenha";
 import CadastroCliente from "./pages/CadastroCliente";
 import CadastroAssociado from "./pages/CadastroAssociado";
 import Obrigado from "./pages/Obrigado";
+import Profile from "./pages/Profile";
+import PlanCheckout from "./pages/PlanCheckout";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +35,8 @@ const App = () => (
           <Route path="/cadastro/cliente" element={<CadastroCliente />} />
           <Route path="/cadastro/associado" element={<CadastroAssociado />} />
           <Route path="/obrigado" element={<Obrigado />} />
+          <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/planos/checkout/:planCode" element={<ProtectedRoute><PlanCheckout /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -25,6 +25,7 @@ interface PricingTier {
   icon: React.ReactNode;
   href?: string;
   buttonText?: string;
+  onClick?: () => void;
 }
 
 interface PricingSectionProps {
@@ -182,11 +183,11 @@ function PricingSection({
 
               {/* CTA Button */}
               <div className="px-5 md:px-6 lg:px-8 pb-5 md:pb-6 lg:pb-8 mt-auto pt-2 md:pt-4">
-                <Button 
-                  className={cn("w-full rounded-lg md:rounded-xl gap-2", tier.highlight ? buttonStyles.highlight : buttonStyles.default)} 
-                  asChild
-                >
-                  <a href={tier.href || "/cadastro/cliente"}>
+                {tier.onClick ? (
+                  <Button
+                    className={cn("w-full rounded-lg md:rounded-xl gap-2", tier.highlight ? buttonStyles.highlight : buttonStyles.default)}
+                    onClick={tier.onClick}
+                  >
                     {tier.highlight ? (
                       <>
                         {tier.buttonText || "Escolher Plano"}
@@ -198,8 +199,27 @@ function PricingSection({
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
-                  </a>
-                </Button>
+                  </Button>
+                ) : (
+                  <Button
+                    className={cn("w-full rounded-lg md:rounded-xl gap-2", tier.highlight ? buttonStyles.highlight : buttonStyles.default)}
+                    asChild
+                  >
+                    <a href={tier.href || "/cadastro/cliente"}>
+                      {tier.highlight ? (
+                        <>
+                          {tier.buttonText || "Escolher Plano"}
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      ) : (
+                        <>
+                          {tier.buttonText || "Começar Agora"}
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </a>
+                  </Button>
+                )}
               </div>
             </div>
           ))}

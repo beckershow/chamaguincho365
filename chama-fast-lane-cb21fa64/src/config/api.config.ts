@@ -5,7 +5,7 @@ const isDevelopment = import.meta.env.DEV;
 
 export const API_CONFIG = {
   production: {
-    baseUrl: 'https://api.chama365guinchos.com.br',
+    baseUrl: 'http://localhost:3000',
     useMock: false,
   },
   development: {

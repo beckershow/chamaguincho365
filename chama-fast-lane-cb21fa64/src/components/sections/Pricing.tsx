@@ -1,14 +1,16 @@
 import { Sparkles, Zap, Shield, Check, Star, MapPin, Smartphone } from 'lucide-react';
 import { PricingSection, type PricingTier } from '@/components/ui/pricing-section';
+import { useAuth } from '@/contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
-const pricingTiers: PricingTier[] = [{
+const createPricingTiers = (handlePlanClick: (planCode: 'BASICO' | 'INTERMEDIARIO') => void): PricingTier[] => [{
   name: "BÁSICO",
   price: {
     monthly: 49.99,
     yearly: 39.99
   },
   description: "Ideal para quem busca proteção em situações pontuais.",
-  href: "/cadastro/cliente",
+  onClick: () => handlePlanClick('BASICO'),
   buttonText: "Escolher Plano Básico",
   icon: <div className="relative">
         <Sparkles className="w-6 h-6 text-primary" />
@@ -39,7 +41,7 @@ const pricingTiers: PricingTier[] = [{
   description: "Para quem quer mais flexibilidade e tranquilidade no dia a dia.",
   highlight: true,
   badge: "Mais Popular",
-  href: "/cadastro/cliente",
+  onClick: () => handlePlanClick('INTERMEDIARIO'),
   buttonText: "Escolher Plano Intermediário",
   icon: <div className="relative">
         <Zap className="w-6 h-6 text-primary" />
@@ -64,6 +66,21 @@ const pricingTiers: PricingTier[] = [{
 }];
 
 export function Pricing() {
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
+  const handlePlanClick = (planCode: 'BASICO' | 'INTERMEDIARIO') => {
+    if (isAuthenticated) {
+      // Se está logado, vai direto para o checkout
+      navigate(`/planos/checkout/${planCode}`);
+    } else {
+      // Se não está logado, redireciona para cadastro com o plano selecionado
+      navigate(`/cadastro?plan=${planCode}`);
+    }
+  };
+
+  const pricingTiers = createPricingTiers(handlePlanClick);
+
   return (
     <section id="planos">
       <PricingSection tiers={pricingTiers} />
