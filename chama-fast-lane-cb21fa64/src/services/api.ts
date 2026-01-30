@@ -511,6 +511,7 @@ class ApiService {
           this.clearAuthTokens();
           localStorage.removeItem('user');
           localStorage.removeItem('user_data');
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
         throw new Error(`Erro na requisição: ${response.status}`);
@@ -538,6 +539,7 @@ class ApiService {
           this.clearAuthTokens();
           localStorage.removeItem('user');
           localStorage.removeItem('user_data');
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
         throw new Error(`Erro na requisição: ${response.status}`);
@@ -565,6 +567,7 @@ class ApiService {
           this.clearAuthTokens();
           localStorage.removeItem('user');
           localStorage.removeItem('user_data');
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
         throw new Error(`Erro na requisição: ${response.status}`);
@@ -592,6 +595,7 @@ class ApiService {
           this.clearAuthTokens();
           localStorage.removeItem('user');
           localStorage.removeItem('user_data');
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
         throw new Error(`Erro na requisição: ${response.status}`);
@@ -618,6 +622,7 @@ class ApiService {
           this.clearAuthTokens();
           localStorage.removeItem('user');
           localStorage.removeItem('user_data');
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
         throw new Error(`Erro na requisição: ${response.status}`);
@@ -628,6 +633,10 @@ class ApiService {
       console.error('Erro na requisição autenticada DELETE:', error);
       return null;
     }
+  }
+
+  async getDriversPendingIssues(): Promise<any> {
+    return this.authenticatedGet<any>('/api/drivers/pending-issues');
   }
 
   // Exemplo de uso: Obter perfil do usuário autenticado
@@ -680,6 +689,7 @@ class ApiService {
           this.clearAuthTokens();
           localStorage.removeItem('user');
           localStorage.removeItem('user_data');
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
         const errorData = await response.json().catch(() => ({}));
@@ -720,6 +730,7 @@ class ApiService {
           this.clearAuthTokens();
           localStorage.removeItem('user');
           localStorage.removeItem('user_data');
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
         const errorData = await response.json().catch(() => ({}));
@@ -760,6 +771,7 @@ class ApiService {
           this.clearAuthTokens();
           localStorage.removeItem('user');
           localStorage.removeItem('user_data');
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
         const errorData = await response.json().catch(() => ({}));
@@ -800,6 +812,7 @@ class ApiService {
           this.clearAuthTokens();
           localStorage.removeItem('user');
           localStorage.removeItem('user_data');
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
         const errorData = await response.json().catch(() => ({}));
@@ -840,6 +853,7 @@ class ApiService {
           this.clearAuthTokens();
           localStorage.removeItem('user');
           localStorage.removeItem('user_data');
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
         }
         const errorData = await response.json().catch(() => ({}));

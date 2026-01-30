@@ -1,124 +1,134 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth, User, ApprovalStatus } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { apiService } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import {
-  Users,
   Truck,
-  CheckCircle,
-  XCircle,
-  Clock,
   Search,
   LogOut,
   Shield,
   Phone,
+  Mail,
+  RefreshCw,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Car,
+  FileText,
+  User,
   MapPin,
   Calendar,
-  Filter,
+  CreditCard,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import logoChama from '@/assets/logo-chama365.png';
 
-interface MotoristaProfile {
-  whatsapp: string;
-  cidade: string;
-  estado: string;
-  possuiCaminhao: string;
-  tiposGuincho: string[];
-  disponibilidade: string;
-  areaAtuacao: number;
-  observacoes: string;
-  status: ApprovalStatus;
-  motivoReprovacao?: string;
-}
-
-interface ClienteProfile {
-  whatsapp: string;
-  cidade: string;
-  estado: string;
-  tipoNecessidade: string;
-}
-
-const tiposGuinchoLabels: Record<string, string> = {
-  plataforma: 'Plataforma',
-  reboque_leve: 'Reboque Leve',
-  munck: 'Munck',
-  pesado: 'Pesado',
+const PENDING_ISSUE_MAP: Record<string, { label: string; color: 'red' | 'yellow' | 'blue' }> = {
+  ACCOUNT_NOT_APPROVED: { label: 'Conta não aprovada', color: 'red' },
+  MISSING_PROFILE_PHOTO: { label: 'Sem foto de perfil', color: 'yellow' },
+  MISSING_CNH_NUMBER: { label: 'CNH não informada', color: 'yellow' },
+  CNH_EXPIRED: { label: 'CNH vencida', color: 'red' },
+  MISSING_CNH_DOCUMENT: { label: 'Doc. CNH ausente', color: 'yellow' },
+  CNH_DOC_REJECTED: { label: 'Doc. CNH rejeitado', color: 'red' },
+  CNH_DOC_PENDING: { label: 'Doc. CNH pendente', color: 'blue' },
+  MISSING_CRLV_DOCUMENT: { label: 'Doc. CRLV ausente', color: 'yellow' },
+  CRLV_DOC_REJECTED: { label: 'Doc. CRLV rejeitado', color: 'red' },
+  CRLV_DOC_PENDING: { label: 'Doc. CRLV pendente', color: 'blue' },
+  MISSING_SELFIE: { label: 'Selfie ausente', color: 'yellow' },
+  SELFIE_DOC_REJECTED: { label: 'Selfie rejeitada', color: 'red' },
+  SELFIE_DOC_PENDING: { label: 'Selfie pendente', color: 'blue' },
+  MISSING_VEHICLE: { label: 'Sem veículo', color: 'yellow' },
 };
 
-const disponibilidadeLabels: Record<string, string> = {
-  '24h': '24 horas',
-  comercial: 'Horário Comercial',
-  noturno: 'Noturno',
-  fins_semana: 'Fins de Semana',
+const STATUS_MAP: Record<string, { label: string; className: string }> = {
+  PENDING: { label: 'Pendente', className: 'bg-yellow-500/20 text-yellow-600' },
+  APPROVED: { label: 'Aprovado', className: 'bg-green-500/20 text-green-600' },
+  REJECTED: { label: 'Rejeitado', className: 'bg-red-500/20 text-red-600' },
 };
+
+const ISSUE_COLOR_CLASS: Record<string, string> = {
+  red: 'bg-red-500/20 text-red-600',
+  yellow: 'bg-yellow-500/20 text-yellow-700',
+  blue: 'bg-blue-500/20 text-blue-600',
+};
+
+interface Driver {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  status: string;
+  photo_url: string | null;
+  cnh_number: string | null;
+  cnh_category: string | null;
+  cnh_expiry: string | null;
+  created_at: string;
+  pending_issues: string[];
+  documents: {
+    cnh: any | null;
+    crlv: any | null;
+    selfie: any | null;
+  };
+  vehicle: { plate: string; model: string } | null;
+  details: {
+    birth_date: string | null;
+    rg: string | null;
+    postal_code: string | null;
+    city: string | null;
+    state: string | null;
+  } | null;
+}
 
 export default function Admin() {
   const navigate = useNavigate();
-  const { user, isAdmin, logout, allUsers, updateUserStatus } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'todos' | 'cliente' | 'motorista'>('todos');
-  const [filterStatus, setFilterStatus] = useState<'todos' | ApprovalStatus>('todos');
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  // Stats - calculate before conditional return
-  const totalClientes = allUsers.filter(u => u.type === 'cliente').length;
-  const totalMotoristas = allUsers.filter(u => u.type === 'motorista').length;
-  const pendentes = allUsers.filter(u => u.type === 'motorista' && (u.profile as MotoristaProfile).status === 'pendente').length;
-  const aprovados = allUsers.filter(u => u.type === 'motorista' && (u.profile as MotoristaProfile).status === 'aprovado').length;
-
-  // Filtered users - must be called before any conditional returns
-  const filteredUsers = useMemo(() => {
-    return allUsers.filter(u => {
-      // Exclude admin
-      if (u.type === 'admin') return false;
-      
-      // Search filter
-      const matchesSearch = 
-        u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.email.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      // Type filter
-      const matchesType = filterType === 'todos' || u.type === filterType;
-      
-      // Status filter (only for motoristas)
-      let matchesStatus = true;
-      if (filterStatus !== 'todos') {
-        if (u.type === 'motorista') {
-          matchesStatus = (u.profile as MotoristaProfile).status === filterStatus;
-        } else {
-          // For clients, only show if filter is 'todos'
-          matchesStatus = false;
-        }
+  const fetchDrivers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await apiService.getDriversPendingIssues();
+      if (response?.success) {
+        setDrivers(response.data?.drivers || []);
+      } else {
+        setError(response?.message || 'Erro ao carregar dados');
       }
-      
-      return matchesSearch && matchesType && matchesStatus;
-    });
-  }, [allUsers, searchTerm, filterType, filterStatus]);
+    } catch (err) {
+      setError('Não foi possível conectar à API.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  // Redirect if not admin - AFTER all hooks
+  useEffect(() => {
+    fetchDrivers();
+  }, [fetchDrivers]);
+
+  const filteredDrivers = useMemo(() => {
+    if (!searchTerm) return drivers;
+    const term = searchTerm.toLowerCase();
+    return drivers.filter(
+      (d) =>
+        d.name.toLowerCase().includes(term) ||
+        d.email.toLowerCase().includes(term)
+    );
+  }, [drivers, searchTerm]);
+
+  const totalPendencias = useMemo(
+    () => drivers.reduce((sum, d) => sum + d.pending_issues.length, 0),
+    [drivers]
+  );
+
   if (!isAdmin) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -132,66 +142,27 @@ export default function Admin() {
     );
   }
 
-  const getInitials = (name: string) => {
-    return name
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+    toast.success('Logout realizado com sucesso!');
+  };
+
+  const getInitials = (name: string) =>
+    name
       .split(' ')
       .map((n) => n[0])
       .join('')
       .toUpperCase()
       .slice(0, 2);
-  };
 
-  const getStatusBadge = (status: ApprovalStatus) => {
-    switch (status) {
-      case 'aprovado':
-        return (
-          <Badge className="bg-green-500/20 text-green-600 hover:bg-green-500/30 gap-1">
-            <CheckCircle className="w-3 h-3" />
-            Aprovado
-          </Badge>
-        );
-      case 'reprovado':
-        return (
-          <Badge className="bg-red-500/20 text-red-600 hover:bg-red-500/30 gap-1">
-            <XCircle className="w-3 h-3" />
-            Reprovado
-          </Badge>
-        );
-      case 'pendente':
-      default:
-        return (
-          <Badge className="bg-yellow-500/20 text-yellow-600 hover:bg-yellow-500/30 gap-1">
-            <Clock className="w-3 h-3" />
-            Pendente
-          </Badge>
-        );
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return '-';
+    try {
+      return new Date(dateStr).toLocaleDateString('pt-BR');
+    } catch {
+      return dateStr;
     }
-  };
-
-  const handleApprove = (userId: string) => {
-    updateUserStatus(userId, 'aprovado');
-    toast.success('Usuário aprovado com sucesso!');
-  };
-
-  const handleReject = () => {
-    if (selectedUser && rejectReason.trim()) {
-      updateUserStatus(selectedUser.id, 'reprovado', rejectReason);
-      toast.success('Usuário reprovado.');
-      setIsRejectDialogOpen(false);
-      setRejectReason('');
-      setSelectedUser(null);
-    }
-  };
-
-  const openRejectDialog = (user: User) => {
-    setSelectedUser(user);
-    setIsRejectDialogOpen(true);
-  };
-
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-    toast.success('Logout realizado com sucesso!');
   };
 
   return (
@@ -217,56 +188,34 @@ export default function Admin() {
 
       <main className="section-container py-8">
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-xl p-6 border border-border">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-blue-500/10 rounded-lg">
-                <Users className="w-6 h-6 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{totalClientes}</p>
-                <p className="text-sm text-muted-foreground">Clientes</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-6 border border-border">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-primary/10 rounded-lg">
-                <Truck className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{totalMotoristas}</p>
-                <p className="text-sm text-muted-foreground">Guincheiros</p>
-              </div>
-            </div>
-          </div>
+        <div className="grid grid-cols-2 gap-4 mb-8">
           <div className="bg-white rounded-xl p-6 border border-border">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-yellow-500/10 rounded-lg">
-                <Clock className="w-6 h-6 text-yellow-500" />
+                <Truck className="w-6 h-6 text-yellow-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">{pendentes}</p>
-                <p className="text-sm text-muted-foreground">Pendentes</p>
+                <p className="text-2xl font-bold text-foreground">{drivers.length}</p>
+                <p className="text-sm text-muted-foreground">Motoristas com pendências</p>
               </div>
             </div>
           </div>
           <div className="bg-white rounded-xl p-6 border border-border">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-green-500/10 rounded-lg">
-                <CheckCircle className="w-6 h-6 text-green-500" />
+              <div className="p-3 bg-red-500/10 rounded-lg">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">{aprovados}</p>
-                <p className="text-sm text-muted-foreground">Aprovados</p>
+                <p className="text-2xl font-bold text-foreground">{totalPendencias}</p>
+                <p className="text-sm text-muted-foreground">Total de pendências</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Filters */}
+        {/* Search + Refresh */}
         <div className="bg-white rounded-xl p-4 border border-border mb-6">
-          <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -276,196 +225,212 @@ export default function Admin() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <div className="flex gap-2">
-              <Select value={filterType} onValueChange={(v) => setFilterType(v as any)}>
-                <SelectTrigger className="w-[140px]">
-                  <Filter className="w-4 h-4 mr-2" />
-                  <SelectValue placeholder="Tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="cliente">Clientes</SelectItem>
-                  <SelectItem value="motorista">Guincheiros</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as any)}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="pendente">Pendente</SelectItem>
-                  <SelectItem value="aprovado">Aprovado</SelectItem>
-                  <SelectItem value="reprovado">Reprovado</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <Button variant="outline" size="icon" onClick={fetchDrivers} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </div>
 
-        {/* Users List */}
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
-          <div className="p-4 border-b border-border">
-            <h2 className="font-semibold text-foreground">
-              Usuários ({filteredUsers.length})
-            </h2>
+        {/* Content */}
+        {loading ? (
+          <div className="bg-white rounded-xl border border-border p-12 flex flex-col items-center justify-center gap-4">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <p className="text-muted-foreground">Carregando motoristas...</p>
           </div>
-          <div className="divide-y divide-border">
-            {filteredUsers.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">
-                Nenhum usuário encontrado.
-              </div>
-            ) : (
-              filteredUsers.map((u) => (
-                <div key={u.id} className="p-4 hover:bg-secondary/30 transition-colors">
-                  <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                    {/* User Info */}
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <Avatar className="h-12 w-12 flex-shrink-0">
-                        <AvatarImage src={u.avatar} alt={u.name} />
-                        <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                          {getInitials(u.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium text-foreground truncate">{u.name}</p>
-                          {u.type === 'motorista' ? (
-                            <Badge variant="outline" className="text-primary border-primary gap-1">
-                              <Truck className="w-3 h-3" />
-                              Guincheiro
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-blue-500 border-blue-500 gap-1">
-                              <Users className="w-3 h-3" />
-                              Cliente
-                            </Badge>
-                          )}
-                          {u.type === 'motorista' && getStatusBadge((u.profile as MotoristaProfile).status)}
+        ) : error ? (
+          <div className="bg-white rounded-xl border border-border p-12 flex flex-col items-center justify-center gap-4">
+            <AlertTriangle className="w-8 h-8 text-red-500" />
+            <p className="text-red-600">{error}</p>
+            <Button onClick={fetchDrivers}>Tentar novamente</Button>
+          </div>
+        ) : filteredDrivers.length === 0 ? (
+          <div className="bg-white rounded-xl border border-border p-12 text-center">
+            <Truck className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">
+              {searchTerm
+                ? 'Nenhum motorista encontrado para esta busca.'
+                : 'Nenhum motorista com pendências.'}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-border overflow-hidden">
+            <div className="p-4 border-b border-border">
+              <h2 className="font-semibold text-foreground">
+                Motoristas ({filteredDrivers.length})
+              </h2>
+            </div>
+            <div className="divide-y divide-border">
+              {filteredDrivers.map((driver) => {
+                const isExpanded = expandedId === driver.id;
+                const statusInfo = STATUS_MAP[driver.status] || STATUS_MAP.PENDING;
+
+                return (
+                  <div key={driver.id} className="hover:bg-secondary/30 transition-colors">
+                    <div
+                      className="p-4 cursor-pointer"
+                      onClick={() => setExpandedId(isExpanded ? null : driver.id)}
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                        {/* Avatar + Info */}
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <Avatar className="h-12 w-12 flex-shrink-0">
+                            <AvatarImage src={driver.photo_url || undefined} alt={driver.name} />
+                            <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                              {getInitials(driver.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-medium text-foreground truncate">{driver.name}</p>
+                              <Badge className={statusInfo.className}>
+                                {statusInfo.label}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1 flex-wrap">
+                              <span className="flex items-center gap-1">
+                                <Mail className="w-3 h-3" />
+                                {driver.email}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Phone className="w-3 h-3" />
+                                {driver.phone}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-sm text-muted-foreground truncate">{u.email}</p>
+
+                        {/* Vehicle */}
+                        <div className="text-sm text-muted-foreground flex items-center gap-1">
+                          <Car className="w-4 h-4" />
+                          {driver.vehicle
+                            ? `${driver.vehicle.plate} - ${driver.vehicle.model}`
+                            : 'Sem veículo'}
+                        </div>
+
+                        {/* CNH summary */}
+                        <div className="text-sm text-muted-foreground flex items-center gap-1">
+                          <CreditCard className="w-4 h-4" />
+                          {driver.cnh_number
+                            ? `${driver.cnh_number} (${driver.cnh_category || '-'})`
+                            : 'CNH não informada'}
+                        </div>
+
+                        {/* Expand icon */}
+                        <div className="flex-shrink-0">
+                          {isExpanded ? (
+                            <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Pending issues badges */}
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {driver.pending_issues.map((issue) => {
+                          const info = PENDING_ISSUE_MAP[issue];
+                          const colorClass = info
+                            ? ISSUE_COLOR_CLASS[info.color]
+                            : 'bg-gray-500/20 text-gray-600';
+                          return (
+                            <Badge key={issue} className={colorClass}>
+                              {info?.label || issue}
+                            </Badge>
+                          );
+                        })}
                       </div>
                     </div>
 
-                    {/* Details */}
-                    <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                      {u.type === 'cliente' ? (
-                        <>
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-4 h-4" />
-                            {(u.profile as ClienteProfile).whatsapp}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <MapPin className="w-4 h-4" />
-                            {(u.profile as ClienteProfile).cidade}/{(u.profile as ClienteProfile).estado}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-4 h-4" />
-                            {(u.profile as MotoristaProfile).whatsapp}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <MapPin className="w-4 h-4" />
-                            {(u.profile as MotoristaProfile).cidade}/{(u.profile as MotoristaProfile).estado}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Truck className="w-4 h-4" />
-                            {(u.profile as MotoristaProfile).tiposGuincho
-                              .map(t => tiposGuinchoLabels[t] || t)
-                              .join(', ')}
-                          </span>
-                        </>
-                      )}
-                      {u.createdAt && (
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-4 h-4" />
-                          {u.createdAt}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Actions (only for motoristas) */}
-                    {u.type === 'motorista' && (
-                      <div className="flex gap-2 lg:flex-shrink-0">
-                        {(u.profile as MotoristaProfile).status === 'pendente' && (
-                          <>
-                            <Button
-                              size="sm"
-                              className="bg-green-500 hover:bg-green-600"
-                              onClick={() => handleApprove(u.id)}
-                            >
-                              <CheckCircle className="w-4 h-4 mr-1" />
-                              Aprovar
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => openRejectDialog(u)}
-                            >
-                              <XCircle className="w-4 h-4 mr-1" />
-                              Recusar
-                            </Button>
-                          </>
-                        )}
-                        {(u.profile as MotoristaProfile).status === 'reprovado' && (
-                          <div className="text-sm text-red-500">
-                            <span className="font-medium">Motivo:</span>{' '}
-                            {(u.profile as MotoristaProfile).motivoReprovacao || 'Não informado'}
+                    {/* Expanded details */}
+                    {isExpanded && (
+                      <div className="px-4 pb-4 border-t border-border/50 pt-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
+                          {/* Documents */}
+                          <div>
+                            <h4 className="font-semibold text-foreground mb-2 flex items-center gap-1">
+                              <FileText className="w-4 h-4" />
+                              Documentos
+                            </h4>
+                            <div className="space-y-1 text-muted-foreground">
+                              <p>
+                                CNH: {driver.documents.cnh
+                                  ? `${driver.documents.cnh.status} (enviado ${formatDate(driver.documents.cnh.uploaded_at)})`
+                                  : 'Não enviado'}
+                              </p>
+                              <p>
+                                CRLV: {driver.documents.crlv
+                                  ? `${driver.documents.crlv.status} (enviado ${formatDate(driver.documents.crlv.uploaded_at)})`
+                                  : 'Não enviado'}
+                              </p>
+                              <p>
+                                Selfie: {driver.documents.selfie
+                                  ? `${driver.documents.selfie.status} (enviado ${formatDate(driver.documents.selfie.uploaded_at)})`
+                                  : 'Não enviado'}
+                              </p>
+                              {driver.cnh_expiry && (
+                                <p>Validade CNH: {formatDate(driver.cnh_expiry)}</p>
+                              )}
+                            </div>
                           </div>
-                        )}
-                        {(u.profile as MotoristaProfile).status === 'aprovado' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openRejectDialog(u)}
-                          >
-                            <XCircle className="w-4 h-4 mr-1" />
-                            Suspender
-                          </Button>
-                        )}
+
+                          {/* Vehicle */}
+                          <div>
+                            <h4 className="font-semibold text-foreground mb-2 flex items-center gap-1">
+                              <Car className="w-4 h-4" />
+                              Veículo
+                            </h4>
+                            {driver.vehicle ? (
+                              <div className="space-y-1 text-muted-foreground">
+                                <p>Placa: {driver.vehicle.plate}</p>
+                                <p>Modelo: {driver.vehicle.model}</p>
+                              </div>
+                            ) : (
+                              <p className="text-muted-foreground">Nenhum veículo cadastrado</p>
+                            )}
+                          </div>
+
+                          {/* Personal details */}
+                          <div>
+                            <h4 className="font-semibold text-foreground mb-2 flex items-center gap-1">
+                              <User className="w-4 h-4" />
+                              Dados Pessoais
+                            </h4>
+                            {driver.details ? (
+                              <div className="space-y-1 text-muted-foreground">
+                                {driver.details.birth_date && (
+                                  <p className="flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    Nascimento: {formatDate(driver.details.birth_date)}
+                                  </p>
+                                )}
+                                {driver.details.rg && <p>RG: {driver.details.rg}</p>}
+                                {driver.details.city && (
+                                  <p className="flex items-center gap-1">
+                                    <MapPin className="w-3 h-3" />
+                                    {driver.details.city}/{driver.details.state}
+                                  </p>
+                                )}
+                                {driver.details.postal_code && (
+                                  <p>CEP: {driver.details.postal_code}</p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-muted-foreground">Sem dados adicionais</p>
+                            )}
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              Cadastro: {formatDate(driver.created_at)}
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </main>
-
-      {/* Reject Dialog */}
-      <Dialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Recusar/Suspender Guincheiro</DialogTitle>
-            <DialogDescription>
-              Informe o motivo da recusa para {selectedUser?.name}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="motivo">Motivo</Label>
-              <Textarea
-                id="motivo"
-                placeholder="Descreva o motivo da recusa..."
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                rows={4}
-              />
+                );
+              })}
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsRejectDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleReject} disabled={!rejectReason.trim()}>
-              Confirmar Recusa
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </main>
     </div>
   );
 }
