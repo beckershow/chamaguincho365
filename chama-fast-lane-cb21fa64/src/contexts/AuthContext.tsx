@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { apiService } from '@/services/api';
 
 export type UserType = 'cliente' | 'motorista' | 'admin';
@@ -167,7 +169,7 @@ const mockUsers: User[] = [
 // Admin user
 const testAdmin: User = {
   id: 'admin-1',
-  email: 'admin@chama365.com',
+  email: 'chamaguincho365@gmail.com',
   name: 'Administrador',
   avatar: undefined,
   type: 'admin',
@@ -179,6 +181,25 @@ const testAdmin: User = {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>(mockUsers);
+  const navigate = useNavigate();
+
+  const handleSessionExpired = useCallback(() => {
+    setUser(null);
+    localStorage.removeItem('user');
+    localStorage.removeItem('user_data');
+    localStorage.removeItem('user_type');
+    localStorage.removeItem('driver_data');
+    apiService.clearAuthTokens();
+    toast.warning('Sua sessão expirou. Faça login novamente.');
+    navigate('/login');
+  }, [navigate]);
+
+  useEffect(() => {
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => {
+      window.removeEventListener('auth:session-expired', handleSessionExpired);
+    };
+  }, [handleSessionExpired]);
 
   useEffect(() => {
     // Check for stored session
@@ -201,7 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<LoginResult> => {
     // Admin login (mock - mantém o acesso admin local)
-    if (email === 'admin@chama365.com' && password === 'admin123') {
+    if (email === 'chamaguincho365@gmail.com' && password === '123') {
       setUser(testAdmin);
       localStorage.setItem('user', JSON.stringify(testAdmin));
       return { success: true };

@@ -2,65 +2,66 @@ import { Sparkles, Zap, Shield, Check, Star, MapPin, Smartphone } from 'lucide-r
 import { PricingSection, type PricingTier } from '@/components/ui/pricing-section';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { apiService } from '@/services/api';
 
-const createPricingTiers = (handlePlanClick: (planCode: 'BASICO' | 'INTERMEDIARIO') => void): PricingTier[] => [{
-  name: "BÁSICO",
+const createPricingTiers = (handlePlanClick: (planCode: 'BASICO' | 'PRO') => void): PricingTier[] => [{
+  name: "BASICO",
   price: {
-    monthly: 49.99,
-    yearly: 39.99
+    monthly: 49.90,
+    yearly: 39.90
   },
-  description: "Ideal para quem busca proteção em situações pontuais.",
+  description: "Ideal para quem busca protecao em situacoes pontuais.",
   onClick: () => handlePlanClick('BASICO'),
-  buttonText: "Escolher Plano Básico",
+  buttonText: "Escolher Plano Basico",
   icon: <div className="relative">
         <Sparkles className="w-6 h-6 text-primary" />
       </div>,
   features: [{
-    name: "1 resgate grátis por mês",
-    description: "Até 40 km de cobertura",
+    name: "Acesso a plataforma de guincho",
+    description: "Solicite guinchos pela plataforma",
     included: true
   }, {
-    name: "Veículo cadastrado",
-    description: "Válido somente para o veículo cadastrado",
+    name: "Suporte por chat",
+    description: "Atendimento via chat",
     included: true
   }, {
-    name: "Ativação em até 48h",
-    description: "Após confirmação do pagamento",
+    name: "Cobertura em todo o Brasil",
+    description: "Valido em todo o territorio nacional",
     included: true
   }, {
-    name: "Km excedente: R$ 4,00/km",
-    description: "Carros e motos após 40 km",
+    name: "Pagamento mensal",
+    description: "R$ 49,90 por mes",
     included: true
   }]
 }, {
-  name: "INTERMEDIÁRIO",
+  name: "PRO",
   price: {
-    monthly: 79.99,
-    yearly: 63.99
+    monthly: 99.90,
+    yearly: 79.90
   },
   description: "Para quem quer mais flexibilidade e tranquilidade no dia a dia.",
   highlight: true,
   badge: "Mais Popular",
-  onClick: () => handlePlanClick('INTERMEDIARIO'),
-  buttonText: "Escolher Plano Intermediário",
+  onClick: () => handlePlanClick('PRO'),
+  buttonText: "Escolher Plano Pro",
   icon: <div className="relative">
         <Zap className="w-6 h-6 text-primary" />
       </div>,
   features: [{
-    name: "2 resgates grátis por mês",
-    description: "Até 40 km cada resgate",
+    name: "Tudo do Basico",
+    description: "Todos os beneficios do plano basico",
     included: true
   }, {
-    name: "Veículo próprio ou de familiar",
-    description: "Pode cadastrar veículo de familiar/amigo",
+    name: "Prioridade no atendimento",
+    description: "Atendimento preferencial",
     included: true
   }, {
-    name: "Ativação em até 48h",
-    description: "Após confirmação do pagamento",
+    name: "Suporte prioritario 24h",
+    description: "Suporte dedicado a qualquer hora",
     included: true
   }, {
-    name: "Km excedente: R$ 4,00/km",
-    description: "Carros e motos após 40 km",
+    name: "Cobertura premium",
+    description: "Relatorios avancados e beneficios extras",
     included: true
   }]
 }];
@@ -69,12 +70,15 @@ export function Pricing() {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  const handlePlanClick = (planCode: 'BASICO' | 'INTERMEDIARIO') => {
+  // Não exibir planos para usuários logados com plano ativo
+  if (isAuthenticated && apiService.isPlanActive()) {
+    return null;
+  }
+
+  const handlePlanClick = (planCode: 'BASICO' | 'PRO') => {
     if (isAuthenticated) {
-      // Se está logado, vai direto para o checkout
       navigate(`/planos/checkout/${planCode}`);
     } else {
-      // Se não está logado, redireciona para cadastro com o plano selecionado
       navigate(`/cadastro?plan=${planCode}`);
     }
   };
@@ -84,7 +88,7 @@ export function Pricing() {
   return (
     <section id="planos">
       <PricingSection tiers={pricingTiers} />
-      
+
       {/* Regras Gerais - Layout Compacto */}
       <div className="bg-background pb-6 md:pb-8">
         <div className="section-container px-4">
@@ -99,19 +103,19 @@ export function Pricing() {
                 <ul className="space-y-1.5 md:space-y-2 text-xs text-muted-foreground">
                   <li className="flex items-start gap-2">
                     <Check className="w-3 h-3 text-primary mt-0.5 flex-shrink-0" />
-                    <span><strong className="text-foreground">1 veículo por CPF</strong></span>
+                    <span><strong className="text-foreground">1 veiculo por CPF</strong></span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Check className="w-3 h-3 text-primary mt-0.5 flex-shrink-0" />
-                    <span>Bloqueio automático ao vencer</span>
+                    <span>Bloqueio automatico ao vencer</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Check className="w-3 h-3 text-primary mt-0.5 flex-shrink-0" />
-                    <span>Renovação antes: ativação imediata</span>
+                    <span>Renovacao antes: ativacao imediata</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Check className="w-3 h-3 text-primary mt-0.5 flex-shrink-0" />
-                    <span>Renovação após: até 48h</span>
+                    <span>Renovacao apos: ate 48h</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Check className="w-3 h-3 text-primary mt-0.5 flex-shrink-0" />
@@ -132,12 +136,12 @@ export function Pricing() {
                     <span className="font-semibold text-foreground">R$ 4,00/km</span>
                   </div>
                   <div className="flex justify-between items-center text-xs">
-                    <span className="text-muted-foreground">Utilitários/Vans</span>
+                    <span className="text-muted-foreground">Utilitarios/Vans</span>
                     <span className="font-semibold text-foreground">R$ 4,25/km</span>
                   </div>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-2 md:mt-3 pt-2 md:pt-3 border-t border-border">
-                  Após os 40 km inclusos no plano
+                  Apos os 40 km inclusos no plano
                 </p>
               </div>
 
@@ -149,8 +153,8 @@ export function Pricing() {
                 </h4>
                 <div className="flex flex-wrap gap-2">
                   <span className="px-3 py-1.5 text-xs font-medium rounded-full bg-muted-foreground text-primary-foreground">Pix</span>
-                  <span className="px-3 py-1.5 text-xs font-medium rounded-full text-primary-foreground bg-muted-foreground">Débito</span>
-                  <span className="px-3 py-1.5 text-xs font-medium rounded-full bg-muted-foreground text-primary-foreground">TED</span>
+                  <span className="px-3 py-1.5 text-xs font-medium rounded-full text-primary-foreground bg-muted-foreground">Debito</span>
+                  <span className="px-3 py-1.5 text-xs font-medium rounded-full bg-muted-foreground text-primary-foreground">Credito</span>
                 </div>
               </div>
             </div>
@@ -172,7 +176,7 @@ export function Pricing() {
             </div>
             <div className="flex items-center gap-2 md:gap-3 text-sm md:text-base text-muted-foreground">
               <Smartphone className="w-5 h-5 md:w-6 md:h-6 text-primary flex-shrink-0" />
-              Válido no app e no site
+              Valido no app e no site
             </div>
           </div>
         </div>

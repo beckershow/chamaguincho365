@@ -1,127 +1,149 @@
 import { API_BASE_URL } from '@/config/api.config';
 
-// Tipos baseados na documentação da API
-export interface Plan {
-  code: 'BASICO' | 'INTERMEDIARIO';
-  name: string;
-  price: number;
-  rescue_limit: number;
-  free_km_per_rescue: number;
-  pricing: {
-    CAR_MOTO: {
-      per_km: number;
-      driver_per_km: number;
-      app_per_km: number;
-    };
-    UTIL_VAN: {
-      per_km: number;
-      driver_per_km: number;
-      app_per_km: number;
-    };
-  };
-}
+// Codes que indicam erro de autenticação
+const AUTH_ERROR_CODES = ['AUTH_UNAUTHORIZED', 'AUTH_TOKEN_EXPIRED'];
 
-export interface Subscription {
-  id: number;
-  user_id: number;
-  plan_code: string;
-  asaas_subscription_id: string;
-  billing_type: 'BOLETO' | 'PIX' | 'CREDIT_CARD' | 'MONEY';
-  value: string;
-  cycle: 'MONTHLY';
-  status: 'ACTIVE' | 'PENDING' | 'OVERDUE' | 'INACTIVE' | 'CANCELLED' | 'COOLDOWN';
-  next_due_date: string;
-}
+// ===================== API ERROR =====================
 
-export interface PlanInfo {
+export class ApiError extends Error {
   code: string;
-  status: string;
-  rescue_limit: number;
-  rescue_used: number;
-  rescue_remaining: number;
-  next_due_date: string;
+  details: string | null;
+  requestId?: string;
+
+  constructor(code: string, message: string, details?: string | null, requestId?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.details = details ?? null;
+    this.requestId = requestId;
+  }
+
+  /** Verifica se é erro de autenticação */
+  get isAuthError(): boolean {
+    return AUTH_ERROR_CODES.includes(this.code);
+  }
 }
 
-export interface Vehicle {
-  id: number;
-  vehicle_plate: string;
-  vehicle_type: 'CAR_MOTO' | 'UTIL_VAN';
-  vehicle_model?: string;
-  vehicle_brand?: string;
-  vehicle_year?: number;
-  is_owner: boolean;
-  owner_name?: string;
-  owner_relationship?: string;
+// ===================== TIPOS =====================
+
+export type PlanCode = 'BASICO' | 'PRO';
+export type BillingType = 'PIX' | 'BOLETO' | 'CREDIT_CARD';
+export type SubscriptionStatus = 'ACTIVE' | 'PENDING' | 'OVERDUE' | 'CANCELLED' | 'EXPIRED' | 'INACTIVE' | 'COOLDOWN';
+export type PaymentStatus = 'RECEIVED' | 'PENDING' | 'OVERDUE' | 'REFUSED' | 'CONFIRMED';
+
+export interface CreditCardData {
+  holderName: string;
+  number: string;
+  expiryMonth: string;
+  expiryYear: string;
+  ccv: string;
 }
 
-export interface MonthlyStats {
-  total_rescues: number;
-  free_rescues: number;
-  paid_rescues: number;
-  total_km: string;
-  total_exceeded_cost: string;
-}
-
-export interface SubscriptionDetails {
-  subscription: Subscription;
-  plan_info: PlanInfo;
-  vehicle?: Vehicle;
-  monthly_stats: MonthlyStats;
+export interface CreditCardHolderInfo {
+  name: string;
+  email: string;
+  cpfCnpj: string;
+  postalCode: string;
+  addressNumber: string;
+  addressComplement?: string;
+  phone?: string;
+  mobilePhone?: string;
 }
 
 export interface CreateSubscriptionData {
-  plan_code: 'BASICO' | 'INTERMEDIARIO';
-  billing_type?: 'BOLETO' | 'PIX' | 'CREDIT_CARD';
-  customer_info?: {
-    name: string;
-    email: string;
-    phone: string;
-    cpf: string;
+  planCode: PlanCode;
+  billingType: BillingType;
+  creditCard?: CreditCardData;
+  creditCardHolderInfo?: CreditCardHolderInfo;
+  remoteIp?: string;
+}
+
+export interface UpdateSubscriptionData {
+  billingType?: 'PIX' | 'CREDIT_CARD';
+  value?: number;
+  nextDueDate?: string;
+  cycle?: 'MONTHLY';
+  description?: string;
+  updatePendingPayments?: boolean;
+  creditCard?: CreditCardData;
+  creditCardHolderInfo?: CreditCardHolderInfo;
+  creditCardToken?: string;
+}
+
+export interface LocalSubscription {
+  id: number;
+  user_id: number;
+  plan_code: PlanCode;
+  asaas_subscription_id: string;
+  billing_type: BillingType;
+  value: number;
+  cycle: string;
+  status: SubscriptionStatus;
+  next_due_date: string;
+  started_at: string;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MySubscriptionResponse {
+  local: LocalSubscription | null;
+  remote: any | null;
+}
+
+export interface SubscriptionResponse {
+  success: boolean;
+  subscription: {
+    id: string;
+    status: string;
+    billingType: string;
+    value: number;
+    nextDueDate: string;
+    invoiceUrl?: string;
+    [key: string]: any;
   };
 }
 
-export interface VehicleData {
-  vehicle_plate: string;
-  vehicle_type: 'CAR_MOTO' | 'UTIL_VAN';
-  vehicle_model?: string;
-  vehicle_brand?: string;
-  vehicle_year?: number;
-  is_owner?: boolean;
-  owner_name?: string;
-  owner_relationship?: string;
+export interface Payment {
+  id: string;
+  status: PaymentStatus;
+  billingType: string;
+  value: number;
+  dueDate: string;
+  paymentDate?: string;
+  invoiceUrl?: string;
+  bankSlipUrl?: string;
+  transactionReceiptUrl?: string;
 }
 
-export interface RescuesAvailable {
-  available: boolean;
-  remaining?: number;
-  used?: number;
-  limit?: number;
-  plan_code?: string;
-  can_use_paid: boolean;
-  monthly_stats?: MonthlyStats;
-  reason?: string;
-  plan_status?: string;
+export interface PaymentsResponse {
+  success: boolean;
+  object: string;
+  hasMore: boolean;
+  totalCount: number;
+  data: Payment[];
 }
 
-export interface PricePreview {
-  has_active_plan: boolean;
-  plan_code?: string;
-  plan_status?: string;
-  rescues_available?: number;
-  rescues_used?: number;
-  distance_km: number;
-  vehicle_type: 'CAR_MOTO' | 'UTIL_VAN';
-  free_km?: number;
-  exceeded_km?: number;
-  per_km_price?: number;
-  exceeded_cost: number;
-  is_free_rescue: boolean;
-  payment_summary: {
-    user_pays: number;
-    driver_receives: number;
-    app_fee: number;
-  };
-}
+// ===================== MAPA DE ERROS =====================
+
+// Mensagens fallback por code (usadas quando error.details é null)
+const FALLBACK_MESSAGES: Record<string, string> = {
+  AUTH_UNAUTHORIZED: 'Sessão expirada. Faça login novamente.',
+  AUTH_TOKEN_EXPIRED: 'Sessão expirada. Faça login novamente.',
+  SUBSCRIPTION_PLAN_INVALID: 'Plano inválido.',
+  BILLING_TYPE_INVALID: 'Método de pagamento inválido.',
+  CREDIT_CARD_DATA_REQUIRED: 'Dados do cartão são obrigatórios.',
+  USER_NOT_FOUND: 'Usuário não encontrado.',
+  SUBSCRIPTION_CREATE_FAILED: 'Erro ao criar assinatura.',
+  SUBSCRIPTION_NOT_FOUND: 'Assinatura não encontrada.',
+  SUBSCRIPTION_FETCH_FAILED: 'Erro ao buscar assinatura.',
+  SUBSCRIPTION_UPDATE_FAILED: 'Erro ao atualizar assinatura.',
+  SUBSCRIPTION_CANCEL_FAILED: 'Erro ao cancelar assinatura.',
+  SUBSCRIPTION_PAYMENTS_FETCH_FAILED: 'Erro ao buscar cobranças.',
+  ONE_TIME_PAYMENT_FAILED: 'Erro ao criar pagamento.',
+};
+
+// ===================== SERVICE =====================
 
 class SubscriptionService {
   private getAuthToken(): string | null {
@@ -137,112 +159,84 @@ class SubscriptionService {
   }
 
   private async handleResponse<T>(response: Response): Promise<T> {
-    // Status 304 (Not Modified) ou 404 significa que não tem assinatura
-    if (response.status === 304 || response.status === 404) {
-      throw new Error('Assinatura não encontrada');
-    }
-
     if (!response.ok) {
-      const error = await response.json().catch(() => ({
-        error: { message: 'Erro na requisição' }
-      }));
-      throw new Error(error.error?.message || error.message || 'Erro desconhecido');
+      const body = await response.json().catch(() => null);
+
+      // Sem body parseavel
+      if (!body) {
+        if (response.status === 502) {
+          throw new ApiError('GATEWAY_ERROR', 'Sistema de pagamento indisponível. Tente novamente em alguns minutos.');
+        }
+        throw new ApiError('UNKNOWN', `Erro no servidor (${response.status}). Tente novamente.`);
+      }
+
+      const error = body.error || {};
+      const code: string = error.code || '';
+      const details: string | null = error.details || null;
+
+      // Regra: details existe → exibir details | senão → message ou fallback
+      const displayMessage = details || error.message || FALLBACK_MESSAGES[code] || 'Erro inesperado. Tente novamente.';
+
+      throw new ApiError(code, displayMessage, details, error.requestId);
     }
 
-    const data = await response.json();
-    return data.data || data;
+    return response.json();
   }
 
-  /**
-   * Lista todos os planos disponíveis
-   */
-  async getPlans(): Promise<Plan[]> {
-    const response = await fetch(`${API_BASE_URL}/api/subscriptions/plans`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
-    return this.handleResponse<Plan[]>(response);
-  }
-
-  /**
-   * Verifica a assinatura atual do usuário
-   */
-  async getMySubscription(): Promise<SubscriptionDetails> {
-    const response = await fetch(`${API_BASE_URL}/api/subscriptions/me`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
-    return this.handleResponse<SubscriptionDetails>(response);
-  }
-
-  /**
-   * Cria uma nova assinatura
-   */
-  async createSubscription(data: CreateSubscriptionData): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/api/subscriptions`, {
+  /** POST /api/asaas/subscriptions */
+  async createSubscription(data: CreateSubscriptionData): Promise<SubscriptionResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/asaas/subscriptions`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(data),
     });
-    return this.handleResponse(response);
+    return this.handleResponse<SubscriptionResponse>(response);
   }
 
-  /**
-   * Cria assinatura com pagamento em dinheiro (apenas testes)
-   */
-  async createMoneySubscription(plan_code: 'BASICO' | 'INTERMEDIARIO'): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/api/subscriptions/money`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({ plan_code }),
-    });
-    return this.handleResponse(response);
-  }
-
-  /**
-   * Cancela a assinatura atual
-   */
-  async cancelSubscription(): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/subscriptions/cancel`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-    });
-    return this.handleResponse(response);
-  }
-
-  /**
-   * Cadastra ou atualiza o veículo do plano
-   */
-  async saveVehicle(data: VehicleData): Promise<Vehicle> {
-    const response = await fetch(`${API_BASE_URL}/api/subscriptions/vehicle`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(data),
-    });
-    return this.handleResponse<Vehicle>(response);
-  }
-
-  /**
-   * Verifica resgates disponíveis no mês
-   */
-  async getRescuesAvailable(): Promise<RescuesAvailable> {
-    const response = await fetch(`${API_BASE_URL}/api/subscriptions/rescues/available`, {
+  /** GET /api/asaas/subscriptions/me */
+  async getMySubscription(): Promise<MySubscriptionResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/asaas/subscriptions/me`, {
       method: 'GET',
       headers: this.getHeaders(),
     });
-    return this.handleResponse<RescuesAvailable>(response);
+    return this.handleResponse<MySubscriptionResponse>(response);
   }
 
-  /**
-   * Calcula preview de preço de uma corrida
-   */
-  async getPricePreview(distance_km: number, vehicle_type: 'CAR_MOTO' | 'UTIL_VAN'): Promise<PricePreview> {
-    const response = await fetch(`${API_BASE_URL}/api/subscriptions/price-preview`, {
-      method: 'POST',
+  /** GET /api/asaas/subscriptions/:id */
+  async getSubscriptionById(id: string): Promise<SubscriptionResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/asaas/subscriptions/${id}`, {
+      method: 'GET',
       headers: this.getHeaders(),
-      body: JSON.stringify({ distance_km, vehicle_type }),
     });
-    return this.handleResponse<PricePreview>(response);
+    return this.handleResponse<SubscriptionResponse>(response);
+  }
+
+  /** PUT /api/asaas/subscriptions/:id */
+  async updateSubscription(id: string, data: UpdateSubscriptionData): Promise<SubscriptionResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/asaas/subscriptions/${id}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse<SubscriptionResponse>(response);
+  }
+
+  /** GET /api/asaas/subscriptions/:id/payments */
+  async getSubscriptionPayments(id: string): Promise<PaymentsResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/asaas/subscriptions/${id}/payments`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse<PaymentsResponse>(response);
+  }
+
+  /** DELETE /api/asaas/subscriptions/:id */
+  async cancelSubscription(id: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/api/asaas/subscriptions/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse<{ success: boolean }>(response);
   }
 }
 

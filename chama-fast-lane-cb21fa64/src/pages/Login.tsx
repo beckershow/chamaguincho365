@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import { Mail, Lock, Eye, EyeOff, Shield, User, Truck } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, User, Truck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import logoChama from "@/assets/logo-chama365.png";
@@ -68,28 +68,6 @@ const Login = () => {
     });
   };
 
-  const handleAdminLogin = async () => {
-    setIsLoading(true);
-    const result = await login('admin@chama365.com', 'admin123');
-    if (result.success) {
-      toast({
-        title: "Login de administrador realizado!",
-        description: "Você será redirecionado...",
-      });
-      setTimeout(() => {
-        navigate("/admin");
-      }, 1000);
-    } else {
-      // Extrair mensagem de erro da resposta da API
-      const errorMessage = result.error?.message || result.error || "Credenciais de administrador inválidas.";
-      toast({
-        title: "Erro no login",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    }
-    setIsLoading(false);
-  };
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -241,17 +219,6 @@ const Login = () => {
             Continuar com Google
           </Button>
 
-          {/* Admin Login */}
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full border-primary/50 text-primary hover:bg-primary/10"
-            size="lg"
-            onClick={handleAdminLogin}
-          >
-            <Shield className="h-5 w-5 mr-2" />
-            Entrar como Administrador
-          </Button>
 
           {/* Register Link */}
           <p className="text-center text-sm text-muted-foreground mt-6">

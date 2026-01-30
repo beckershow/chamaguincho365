@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Smartphone, Truck, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
 export function FinalCTA() {
   return (
@@ -27,21 +27,11 @@ export function FinalCTA() {
             Estamos prontos para ajudar você, seja como cliente ou como parceiro. Comece agora mesmo!
           </p>
 
-          {/* CTAs */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-4">
-            <Link to="/cadastro/cliente" className="w-full sm:w-auto">
+          {/* CTA */}
+          <div className="flex items-center justify-center">
+            <Link to="/cadastro" className="w-full sm:w-auto">
               <Button variant="hero" size="lg" className="w-full sm:w-auto gap-2 text-sm md:text-base">
-                <Smartphone className="w-4 h-4 md:w-5 md:h-5" />
-                Quero solicitar um guincho
-              </Button>
-            </Link>
-            <Link to="/cadastro/associado" className="w-full sm:w-auto">
-              <Button 
-                size="lg" 
-                className="w-full sm:w-auto gap-2 bg-transparent border-2 border-background/30 text-background hover:bg-background hover:text-foreground text-sm md:text-base"
-              >
-                <Truck className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="hidden xs:inline">Quero me cadastrar como</span> guincheiro
+                Cadastre-se agora
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </Link>

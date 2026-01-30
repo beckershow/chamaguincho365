@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
-import { User, CreditCard, Lock, LogOut } from 'lucide-react';
+import { User, CreditCard, Lock, LogOut, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { SubscriptionManagement } from '@/components/SubscriptionManagement';
 
@@ -64,6 +64,11 @@ export default function Profile() {
     <div className="min-h-screen bg-background">
       <div className="section-container py-8 px-4">
         <div className="max-w-5xl mx-auto">
+          <Button variant="ghost" onClick={() => navigate(-1)} className="mb-4">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Voltar
+          </Button>
+
           {/* Header */}
           <div className="flex flex-col md:flex-row items-start md:items-center gap-6 mb-8">
             <Avatar className="h-24 w-24 border-4 border-primary/20">
