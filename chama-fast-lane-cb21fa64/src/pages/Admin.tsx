@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Truck,
   Search,
@@ -24,6 +26,10 @@ import {
   Calendar,
   CreditCard,
   Loader2,
+  CheckCircle,
+  XCircle,
+  Ban,
+  Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import logoChama from '@/assets/logo-chama365.png';
@@ -49,6 +55,7 @@ const STATUS_MAP: Record<string, { label: string; className: string }> = {
   PENDING: { label: 'Pendente', className: 'bg-yellow-500/20 text-yellow-600' },
   APPROVED: { label: 'Aprovado', className: 'bg-green-500/20 text-green-600' },
   REJECTED: { label: 'Rejeitado', className: 'bg-red-500/20 text-red-600' },
+  BLOCKED: { label: 'Bloqueado', className: 'bg-gray-500/20 text-gray-600' },
 };
 
 const ISSUE_COLOR_CLASS: Record<string, string> = {
@@ -92,6 +99,78 @@ export default function Admin() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // Dialog de motivo (rejeitar / bloquear motorista ou documento)
+  const [reasonDialog, setReasonDialog] = useState<{
+    open: boolean;
+    driverId: number;
+    target: 'driver' | 'cnh' | 'crlv' | 'selfie';
+    action: 'REJECTED' | 'BLOCKED';
+    reason: string;
+  }>({ open: false, driverId: 0, target: 'driver', action: 'REJECTED', reason: '' });
+
+  // Dialog de imagem
+  const [imageDialog, setImageDialog] = useState<{ open: boolean; url: string; title: string }>({
+    open: false, url: '', title: '',
+  });
+
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const handleDriverStatusAction = async (driverId: number, status: string, reason?: string) => {
+    setActionLoading(true);
+    try {
+      const res = await apiService.updateDriverStatus(driverId, status, reason);
+      if (res.success) {
+        toast.success(`Status do motorista atualizado para ${STATUS_MAP[status]?.label || status}`);
+        fetchDrivers();
+      } else {
+        toast.error(res.message || 'Erro ao atualizar status');
+      }
+    } catch {
+      toast.error('Erro ao atualizar status do motorista');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDocStatusAction = async (driverId: number, type: string, status: string, reason?: string) => {
+    setActionLoading(true);
+    try {
+      const res = await apiService.updateDriverDocumentStatus(driverId, type, status, reason);
+      if (res.success) {
+        toast.success(`Documento ${type.toUpperCase()} atualizado para ${STATUS_MAP[status]?.label || status}`);
+        fetchDrivers();
+      } else {
+        toast.error(res.message || 'Erro ao atualizar documento');
+      }
+    } catch {
+      toast.error('Erro ao atualizar status do documento');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReasonSubmit = () => {
+    if (!reasonDialog.reason.trim()) {
+      toast.error('Informe o motivo');
+      return;
+    }
+    if (reasonDialog.target === 'driver') {
+      handleDriverStatusAction(reasonDialog.driverId, reasonDialog.action, reasonDialog.reason);
+    } else {
+      handleDocStatusAction(reasonDialog.driverId, reasonDialog.target, reasonDialog.action, reasonDialog.reason);
+    }
+    setReasonDialog((prev) => ({ ...prev, open: false, reason: '' }));
+  };
+
+  const openDocImage = async (driverId: number, type: string, title: string) => {
+    const url = await apiService.fetchDriverDocumentBlob(driverId, type);
+    if (url) {
+      setImageDialog({ open: true, url, title });
+    } else {
+      toast.error('Erro ao carregar imagem do documento');
+    }
+  };
 
   const fetchDrivers = useCallback(async () => {
     setLoading(true);
@@ -344,6 +423,38 @@ export default function Admin() {
                     {/* Expanded details */}
                     {isExpanded && (
                       <div className="px-4 pb-4 border-t border-border/50 pt-4">
+                        {/* Driver status actions */}
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          <span className="text-sm font-semibold text-foreground mr-2">Status do motorista:</span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-green-600 border-green-300 hover:bg-green-50"
+                            disabled={actionLoading || driver.status === 'APPROVED'}
+                            onClick={(e) => { e.stopPropagation(); handleDriverStatusAction(driver.id, 'APPROVED'); }}
+                          >
+                            <CheckCircle className="w-4 h-4 mr-1" /> Aprovar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 border-red-300 hover:bg-red-50"
+                            disabled={actionLoading}
+                            onClick={(e) => { e.stopPropagation(); setReasonDialog({ open: true, driverId: driver.id, target: 'driver', action: 'REJECTED', reason: '' }); }}
+                          >
+                            <XCircle className="w-4 h-4 mr-1" /> Rejeitar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-gray-600 border-gray-300 hover:bg-gray-50"
+                            disabled={actionLoading || driver.status === 'BLOCKED'}
+                            onClick={(e) => { e.stopPropagation(); setReasonDialog({ open: true, driverId: driver.id, target: 'driver', action: 'BLOCKED', reason: '' }); }}
+                          >
+                            <Ban className="w-4 h-4 mr-1" /> Bloquear
+                          </Button>
+                        </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
                           {/* Documents */}
                           <div>
@@ -351,22 +462,50 @@ export default function Admin() {
                               <FileText className="w-4 h-4" />
                               Documentos
                             </h4>
-                            <div className="space-y-1 text-muted-foreground">
-                              <p>
-                                CNH: {driver.documents.cnh
-                                  ? `${driver.documents.cnh.status} (enviado ${formatDate(driver.documents.cnh.uploaded_at)})`
-                                  : 'Não enviado'}
-                              </p>
-                              <p>
-                                CRLV: {driver.documents.crlv
-                                  ? `${driver.documents.crlv.status} (enviado ${formatDate(driver.documents.crlv.uploaded_at)})`
-                                  : 'Não enviado'}
-                              </p>
-                              <p>
-                                Selfie: {driver.documents.selfie
-                                  ? `${driver.documents.selfie.status} (enviado ${formatDate(driver.documents.selfie.uploaded_at)})`
-                                  : 'Não enviado'}
-                              </p>
+                            <div className="space-y-3 text-muted-foreground">
+                              {(['cnh', 'crlv', 'selfie'] as const).map((docType) => {
+                                const doc = driver.documents[docType];
+                                const label = docType.toUpperCase();
+                                return (
+                                  <div key={docType}>
+                                    <p>
+                                      {label}: {doc
+                                        ? `${doc.status} (enviado ${formatDate(doc.uploaded_at)})`
+                                        : 'Não enviado'}
+                                    </p>
+                                    {doc && (
+                                      <div className="flex gap-1 mt-1">
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-7 px-2 text-xs"
+                                          onClick={(e) => { e.stopPropagation(); openDocImage(driver.id, docType, `${label} - ${driver.name}`); }}
+                                        >
+                                          <Eye className="w-3 h-3 mr-1" /> Ver
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-7 px-2 text-xs text-green-600"
+                                          disabled={actionLoading || doc.status === 'APPROVED'}
+                                          onClick={(e) => { e.stopPropagation(); handleDocStatusAction(driver.id, docType, 'APPROVED'); }}
+                                        >
+                                          <CheckCircle className="w-3 h-3 mr-1" /> Aprovar
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-7 px-2 text-xs text-red-600"
+                                          disabled={actionLoading}
+                                          onClick={(e) => { e.stopPropagation(); setReasonDialog({ open: true, driverId: driver.id, target: docType, action: 'REJECTED', reason: '' }); }}
+                                        >
+                                          <XCircle className="w-3 h-3 mr-1" /> Rejeitar
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                               {driver.cnh_expiry && (
                                 <p>Validade CNH: {formatDate(driver.cnh_expiry)}</p>
                               )}
@@ -431,6 +570,46 @@ export default function Admin() {
           </div>
         )}
       </main>
+
+      {/* Dialog de motivo (rejeitar/bloquear) */}
+      <Dialog open={reasonDialog.open} onOpenChange={(open) => setReasonDialog((prev) => ({ ...prev, open }))}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {reasonDialog.action === 'BLOCKED' ? 'Bloquear' : 'Rejeitar'}{' '}
+              {reasonDialog.target === 'driver' ? 'motorista' : `documento ${reasonDialog.target.toUpperCase()}`}
+            </DialogTitle>
+          </DialogHeader>
+          <Textarea
+            placeholder="Informe o motivo..."
+            value={reasonDialog.reason}
+            onChange={(e) => setReasonDialog((prev) => ({ ...prev, reason: e.target.value }))}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReasonDialog((prev) => ({ ...prev, open: false }))}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" disabled={actionLoading} onClick={handleReasonSubmit}>
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de imagem */}
+      <Dialog open={imageDialog.open} onOpenChange={(open) => {
+        if (!open && imageDialog.url) URL.revokeObjectURL(imageDialog.url);
+        setImageDialog((prev) => ({ ...prev, open }));
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{imageDialog.title}</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center">
+            <img src={imageDialog.url} alt={imageDialog.title} className="max-h-[70vh] object-contain rounded" />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

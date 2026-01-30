@@ -639,6 +639,70 @@ class ApiService {
     return this.authenticatedGet<any>('/api/drivers/pending-issues');
   }
 
+  async updateDriverStatus(driverId: number, status: string, rejection_reason?: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      const accessToken = this.getAccessToken();
+      const response = await fetch(`${this.baseUrl}/api/drivers/${driverId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ status, rejection_reason }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const msg = data.error?.message || data.message || (typeof data.error === 'string' ? data.error : `Erro ${response.status}`);
+        return { success: false, message: msg };
+      }
+
+      return { success: true, message: data.message };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Erro de conexão' };
+    }
+  }
+
+  async updateDriverDocumentStatus(driverId: number, type: string, status: string, rejection_reason?: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      const accessToken = this.getAccessToken();
+      const response = await fetch(`${this.baseUrl}/api/drivers/${driverId}/documents/${type}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ status, rejection_reason }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const msg = data.error?.message || data.message || (typeof data.error === 'string' ? data.error : `Erro ${response.status}`);
+        return { success: false, message: msg };
+      }
+
+      return { success: true, message: data.message };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Erro de conexão' };
+    }
+  }
+
+  async fetchDriverDocumentBlob(driverId: number, type: string): Promise<string | null> {
+    try {
+      const accessToken = this.getAccessToken();
+      const response = await fetch(`${this.baseUrl}/api/drivers/${driverId}/documents/${type}/file`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch {
+      return null;
+    }
+  }
+
   // Exemplo de uso: Obter perfil do usuário autenticado
   async getProfile(): Promise<ApiUser | null> {
     return this.authenticatedGet<ApiUser>('/api/users/profile');
