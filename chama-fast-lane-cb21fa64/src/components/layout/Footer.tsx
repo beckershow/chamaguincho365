@@ -18,7 +18,7 @@ export function Footer() {
                 </p>
               </div>
               <a
-                href="https://wa.me/5511999999999"
+                href="https://api.whatsapp.com/send/?phone=5547988157399&text=Ol%C3%A1%2C%20gostaria%20de%20saber%20mais%20sobre%20os%20servi%C3%A7os%20da%20Chama%20365%20Guincho.&type=phone_number&app_absent=0"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-green-500 flex items-center justify-center hover:bg-green-600 transition-colors flex-shrink-0"
@@ -97,14 +97,14 @@ export function Footer() {
               </li>
               <li className="flex items-start gap-2 md:gap-3">
                 <Mail className="w-4 h-4 md:w-5 md:h-5 text-primary flex-shrink-0 mt-0.5" />
-                <a href="mailto:contato@chama365.com.br" className="text-xs md:text-sm text-background/70 hover:text-primary transition-colors break-all">
-                  contato@chama365.com.br
+                <a href="mailto:chamaguinchos365@gmail.com" className="text-xs md:text-sm text-background/70 hover:text-primary transition-colors break-all">
+                  chamaguinchos365@gmail.com
                 </a>
               </li>
               <li className="flex items-start gap-2 md:gap-3">
                 <MapPin className="w-4 h-4 md:w-5 md:h-5 text-primary flex-shrink-0 mt-0.5" />
                 <span className="text-xs md:text-sm text-background/70">
-                  Atendimento em todo o Brasil
+                  Rua Charles Voigt, 40 - Encano, Indaial/SC - CEP 89.086-355
                 </span>
               </li>
             </ul>
@@ -114,7 +114,7 @@ export function Footer() {
         {/* Bottom */}
         <div className="mt-8 md:mt-12 lg:mt-16 pt-6 md:pt-8 border-t border-background/10 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs md:text-sm text-background/50 text-center sm:text-left">
-            © 2024 Chama 365 Guinchos. Todos os direitos reservados.
+            © 2025 CHAMA 365 GUINCHO LTDA - CNPJ 63.554.394/0001-40. Todos os direitos reservados.
           </p>
           <div className="flex items-center gap-4 md:gap-6 text-xs md:text-sm text-background/50">
             <a href="#" className="hover:text-primary transition-colors">

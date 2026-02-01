@@ -460,13 +460,12 @@ class ApiService {
     return !!this.getAccessToken();
   }
 
-  // Método para verificar se o plano está ativo
+  // Método para verificar se o plano está ativo (local/fallback)
   isPlanActive(): boolean {
     const userData = this.getUserData();
     if (!userData) return false;
 
     if (userData.plan_status === 'ACTIVE') {
-      // Verificar se o plano não está vencido
       if (userData.plan_valid_until) {
         const validUntil = new Date(userData.plan_valid_until);
         const now = new Date();
@@ -475,6 +474,34 @@ class ApiService {
       return true;
     }
     return false;
+  }
+
+  // Consulta o status do plano em tempo real via API
+  async fetchPlanStatus(): Promise<{ plan_status: string; plan_code: string | null } | null> {
+    try {
+      const accessToken = this.getAccessToken();
+      const response = await fetch(`${this.baseUrl}/api/users/plan-status`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      log.info('Plan status response:', data);
+
+      // Suporta { plan_status } ou { data: { plan_status } }
+      const plan_status = data.plan_status || data.data?.plan_status || null;
+      const plan_code = data.plan_code || data.data?.plan_code || null;
+
+      return { plan_status, plan_code };
+    } catch (error) {
+      log.error('Erro ao buscar plan-status:', error);
+      return null;
+    }
   }
 
   // Método para verificar se o email foi verificado

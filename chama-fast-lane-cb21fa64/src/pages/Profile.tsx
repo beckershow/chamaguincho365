@@ -11,22 +11,28 @@ import { Separator } from '@/components/ui/separator';
 import { User, CreditCard, Lock, LogOut, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { SubscriptionManagement } from '@/components/SubscriptionManagement';
+import { apiService } from '@/services/api';
 
 export default function Profile() {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+  const [planStatus, setPlanStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
+      return;
     }
+    apiService.fetchPlanStatus().then((res) => {
+      setPlanStatus(res?.plan_status || null);
+    }).catch(() => {});
   }, [isAuthenticated, navigate]);
 
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || '',
-    phone: user?.telefone || '',
+    phone: user?.phone_number || '',
   });
 
   const handleLogout = () => {
@@ -64,7 +70,7 @@ export default function Profile() {
     <div className="min-h-screen bg-background">
       <div className="section-container py-8 px-4">
         <div className="max-w-5xl mx-auto">
-          <Button variant="ghost" onClick={() => navigate(-1)} className="mb-4">
+          <Button variant="ghost" onClick={() => navigate('/')} className="mb-4">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar
           </Button>
@@ -84,7 +90,7 @@ export default function Profile() {
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
                   {user.tipo === 'cliente' ? 'Cliente' : user.tipo === 'motorista' ? 'Guincheiro' : 'Admin'}
                 </span>
-                {user.plan_status === 'ACTIVE' && (
+                {planStatus === 'ACTIVE' && (
                   <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-500/10 text-green-700 dark:text-green-400">
                     Plano Ativo
                   </span>

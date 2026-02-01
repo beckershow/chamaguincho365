@@ -36,6 +36,7 @@ import {
   type MySubscriptionResponse,
   type PlanCode,
 } from '@/services/subscriptionService';
+import { apiService } from '@/services/api';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -52,8 +53,38 @@ const PLAN_PRICES: Record<string, number> = {
 export function SubscriptionManagement() {
   const navigate = useNavigate();
   const [subscription, setSubscription] = useState<MySubscriptionResponse | null>(null);
+  const [realPlanStatus, setRealPlanStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isChangingPlan, setIsChangingPlan] = useState(false);
+
+  const handleChangePlan = async (targetPlan: PlanCode) => {
+    const s = subscription?.local;
+    if (!s) return;
+    const isUpgrade = targetPlan === 'PRO';
+    try {
+      setIsChangingPlan(true);
+      await subscriptionService.updateSubscription(s.asaas_subscription_id, {
+        value: PLAN_PRICES[targetPlan],
+        updatePendingPayments: false,
+      });
+      toast.success(
+        isUpgrade
+          ? 'Upgrade realizado! O novo valor sera cobrado no proximo ciclo.'
+          : 'Downgrade realizado! O novo valor sera cobrado no proximo ciclo.'
+      );
+      loadSubscription();
+    } catch (error: any) {
+      if (error instanceof ApiError && error.isAuthError) {
+        toast.error(error.message);
+        navigate('/login');
+        return;
+      }
+      toast.error(error.message || `Erro ao ${isUpgrade ? 'fazer upgrade' : 'fazer downgrade'}`);
+    } finally {
+      setIsChangingPlan(false);
+    }
+  };
 
   useEffect(() => {
     loadSubscription();
@@ -62,8 +93,14 @@ export function SubscriptionManagement() {
   const loadSubscription = async () => {
     try {
       setIsLoading(true);
-      const data = await subscriptionService.getMySubscription();
+      const [data, planRes] = await Promise.all([
+        subscriptionService.getMySubscription(),
+        apiService.fetchPlanStatus().catch(() => null),
+      ]);
       setSubscription(data);
+      const status = planRes?.plan_status ?? null;
+      console.log('[SubscriptionManagement] plan-status endpoint:', planRes, '-> effectiveStatus:', status);
+      setRealPlanStatus(status);
     } catch (error: any) {
       console.error('Erro ao carregar assinatura:', error);
       if (error instanceof ApiError && error.isAuthError) {
@@ -248,14 +285,18 @@ export function SubscriptionManagement() {
     );
   }
 
-  // Com assinatura: mostrar detalhes
-  const canCancel = sub.status !== 'CANCELLED' && sub.status !== 'EXPIRED';
-  const isActive = sub.status === 'ACTIVE';
-  const isPending = sub.status === 'PENDING';
-  const isOverdue = sub.status === 'OVERDUE';
-  const isCancelled = sub.status === 'CANCELLED';
-  const isCooldown = sub.status === 'COOLDOWN';
-  const isExpired = sub.status === 'EXPIRED' || sub.status === 'INACTIVE';
+  // Com assinatura: usar plan_status real do endpoint /api/users/plan-status
+  const effectiveStatus = realPlanStatus ?? sub.status;
+  // Se plano INACTIVE mas assinatura existe e não cancelada → pagamento pendente
+  const hasPendingPayment = (effectiveStatus === 'INACTIVE' || effectiveStatus === 'PENDING') &&
+    sub.status !== 'CANCELLED' && sub.status !== 'EXPIRED';
+  const canCancel = effectiveStatus !== 'CANCELLED' && effectiveStatus !== 'EXPIRED';
+  const isActive = effectiveStatus === 'ACTIVE';
+  const isPending = hasPendingPayment;
+  const isOverdue = effectiveStatus === 'OVERDUE';
+  const isCancelled = effectiveStatus === 'CANCELLED';
+  const isCooldown = effectiveStatus === 'COOLDOWN';
+  const isExpired = (effectiveStatus === 'EXPIRED' || effectiveStatus === 'INACTIVE') && !hasPendingPayment;
 
   return (
     <div className="space-y-6">
@@ -337,7 +378,7 @@ export function SubscriptionManagement() {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   Plano {PLAN_NAMES[sub.plan_code] || sub.plan_code}
-                  {getStatusBadge(sub.status)}
+                  {getStatusBadge(hasPendingPayment ? 'PENDING' : effectiveStatus)}
                 </CardTitle>
                 <CardDescription>
                   {formatCurrency(sub.value)}/mes
@@ -398,14 +439,53 @@ export function SubscriptionManagement() {
             </Button>
 
             {isActive && sub.plan_code === 'BASICO' && (
-              <Button
-                onClick={() => navigate('/planos/checkout/PRO')}
-                variant="outline"
-                className="flex-1"
-              >
-                <TrendingUp className="w-4 h-4 mr-2" />
-                Fazer Upgrade
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="flex-1">
+                    <TrendingUp className="w-4 h-4 mr-2" />
+                    Upgrade para Pro
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Upgrade para Plano Pro</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      O valor do plano Pro ({formatCurrency(PLAN_PRICES.PRO)}/mes) sera aplicado a partir do proximo ciclo de cobranca. Ate la, voce continua pagando o valor atual.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => handleChangePlan('PRO')} disabled={isChangingPlan}>
+                      {isChangingPlan ? 'Processando...' : 'Confirmar Upgrade'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+
+            {isActive && sub.plan_code === 'PRO' && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="flex-1">
+                    <Package className="w-4 h-4 mr-2" />
+                    Downgrade para Basico
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Downgrade para Plano Basico</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      O valor do plano Basico ({formatCurrency(PLAN_PRICES.BASICO)}/mes) sera aplicado a partir do proximo ciclo de cobranca. Ate la, voce continua com o plano Pro.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => handleChangePlan('BASICO')} disabled={isChangingPlan}>
+                      {isChangingPlan ? 'Processando...' : 'Confirmar Downgrade'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
 
             {canCancel && (

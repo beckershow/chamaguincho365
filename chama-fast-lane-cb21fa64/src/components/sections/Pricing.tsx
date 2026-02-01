@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Sparkles, Zap, Shield, Check, Star, MapPin, Smartphone } from 'lucide-react';
 import { PricingSection, type PricingTier } from '@/components/ui/pricing-section';
 import { useAuth } from '@/contexts/AuthContext';
@@ -69,11 +70,21 @@ const createPricingTiers = (handlePlanClick: (planCode: 'BASICO' | 'PRO') => voi
 export function Pricing() {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const [planActive, setPlanActive] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      apiService.fetchPlanStatus().then((res) => {
+        setPlanActive(res?.plan_status === 'ACTIVE');
+      }).catch(() => setPlanActive(false));
+    } else {
+      setPlanActive(false);
+    }
+  }, [isAuthenticated]);
 
   // Não exibir planos para usuários logados com plano ativo
-  if (isAuthenticated && apiService.isPlanActive()) {
-    return null;
-  }
+  if (planActive === null) return null;
+  if (isAuthenticated && planActive) return null;
 
   const handlePlanClick = (planCode: 'BASICO' | 'PRO') => {
     if (isAuthenticated) {
