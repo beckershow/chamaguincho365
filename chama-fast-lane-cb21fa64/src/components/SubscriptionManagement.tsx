@@ -137,7 +137,10 @@ export function SubscriptionManagement() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, cancelledButActive?: boolean) => {
+    if (cancelledButActive) {
+      return <Badge variant="secondary" className="bg-orange-500/15 text-orange-700 border-orange-300">Cancelamento agendado</Badge>;
+    }
     const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
       ACTIVE: { label: 'Ativo', variant: 'default' },
       PENDING: { label: 'Pendente', variant: 'secondary' },
@@ -286,10 +289,15 @@ export function SubscriptionManagement() {
   }
 
   // Com assinatura: usar plan_status real do endpoint /api/users/plan-status
-  const effectiveStatus = realPlanStatus ?? sub.status;
+  // Normalizar: backend pode retornar CANCELED (1 L) ou CANCELLED (2 L)
+  const rawStatus = realPlanStatus ?? sub.status;
+  const effectiveStatus = rawStatus === 'CANCELED' ? 'CANCELLED' : rawStatus;
   // Se plano INACTIVE mas assinatura existe e não cancelada → pagamento pendente
   const hasPendingPayment = (effectiveStatus === 'INACTIVE' || effectiveStatus === 'PENDING') &&
     sub.status !== 'CANCELLED' && sub.status !== 'EXPIRED';
+  // Cancelado mas ainda com acesso válido (active_until no futuro)
+  const cancelledButActive = effectiveStatus === 'CANCELLED' && sub.next_due_date &&
+    new Date(sub.next_due_date) > new Date();
   const canCancel = effectiveStatus !== 'CANCELLED' && effectiveStatus !== 'EXPIRED';
   const isActive = effectiveStatus === 'ACTIVE';
   const isPending = hasPendingPayment;
@@ -353,14 +361,37 @@ export function SubscriptionManagement() {
         </Card>
       )}
 
-      {isCancelled && sub.next_due_date && (
+      {isCancelled && cancelledButActive && (
         <Card className="border-orange-500/50 bg-orange-50 dark:bg-orange-950/20">
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <Clock className="w-5 h-5 text-orange-600 flex-shrink-0" />
+              <div>
+                <p className="font-medium text-orange-800 dark:text-orange-200">
+                  Plano ativo ate {formatDate(sub.next_due_date)}
+                </p>
+                <p className="text-sm text-orange-600 dark:text-orange-400">
+                  Cancelamento agendado
+                </p>
+              </div>
+            </div>
+            <div className="bg-orange-100 dark:bg-orange-900/30 rounded-lg p-3 text-sm text-orange-700 dark:text-orange-300 space-y-1">
+              <p>Voce solicitou o cancelamento do plano.</p>
+              <p>Nao havera novas cobrancas.</p>
+              <p>Voce pode usar todos os recursos ate <strong>{formatDate(sub.next_due_date)}</strong>.</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isCancelled && !cancelledButActive && (
+        <Card className="border-gray-500/50 bg-gray-50 dark:bg-gray-950/20">
           <CardContent className="flex items-center gap-3 py-4">
-            <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0" />
+            <AlertTriangle className="w-5 h-5 text-gray-500 flex-shrink-0" />
             <div>
-              <p className="font-medium text-orange-800 dark:text-orange-200">Assinatura cancelada</p>
-              <p className="text-sm text-orange-600 dark:text-orange-400">
-                Acesso disponivel ate {formatDate(sub.next_due_date)}.
+              <p className="font-medium text-gray-700 dark:text-gray-300">Assinatura encerrada</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Seu plano foi cancelado e o acesso expirou.
               </p>
             </div>
           </CardContent>
@@ -378,7 +409,7 @@ export function SubscriptionManagement() {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   Plano {PLAN_NAMES[sub.plan_code] || sub.plan_code}
-                  {getStatusBadge(hasPendingPayment ? 'PENDING' : effectiveStatus)}
+                  {getStatusBadge(hasPendingPayment ? 'PENDING' : effectiveStatus, cancelledButActive)}
                 </CardTitle>
                 <CardDescription>
                   {formatCurrency(sub.value)}/mes
@@ -391,10 +422,12 @@ export function SubscriptionManagement() {
           {/* Informacoes */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {sub.next_due_date && (
-              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                <Calendar className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              <div className={`flex items-center gap-2 p-3 rounded-lg ${cancelledButActive ? 'bg-orange-50 dark:bg-orange-950/20' : 'bg-muted'}`}>
+                <Calendar className={`w-4 h-4 flex-shrink-0 ${cancelledButActive ? 'text-orange-500' : 'text-muted-foreground'}`} />
                 <div>
-                  <p className="text-xs text-muted-foreground">Proximo vencimento</p>
+                  <p className={`text-xs ${cancelledButActive ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                    {cancelledButActive ? 'Acesso valido ate' : 'Proximo vencimento'}
+                  </p>
                   <p className="text-sm font-medium">{formatDate(sub.next_due_date)}</p>
                 </div>
               </div>
@@ -488,7 +521,7 @@ export function SubscriptionManagement() {
               </AlertDialog>
             )}
 
-            {canCancel && (
+            {canCancel && !cancelledButActive && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive" className="flex-1">
@@ -500,8 +533,8 @@ export function SubscriptionManagement() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Tem certeza?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Ao cancelar sua assinatura, voce perdera acesso aos beneficios do plano.
-                      {sub.next_due_date && ` O acesso sera mantido ate ${formatDate(sub.next_due_date)}.`}
+                      Ao cancelar sua assinatura, nao havera novas cobrancas.
+                      {sub.next_due_date && ` Voce podera usar todos os recursos ate ${formatDate(sub.next_due_date)}.`}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -518,7 +551,14 @@ export function SubscriptionManagement() {
               </AlertDialog>
             )}
 
-            {(isExpired || isCancelled) && (
+            {cancelledButActive && (
+              <Button onClick={() => navigate('/planos/checkout/BASICO')} variant="outline" className="flex-1">
+                <TrendingUp className="w-4 h-4 mr-2" />
+                Reativar Plano
+              </Button>
+            )}
+
+            {(isExpired || (isCancelled && !cancelledButActive)) && (
               <Button onClick={() => navigate('/planos/checkout/BASICO')} className="flex-1">
                 <Check className="w-4 h-4 mr-2" />
                 Renovar Plano

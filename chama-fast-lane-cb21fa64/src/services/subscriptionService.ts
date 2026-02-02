@@ -147,7 +147,9 @@ const FALLBACK_MESSAGES: Record<string, string> = {
 
 class SubscriptionService {
   private getAuthToken(): string | null {
-    return localStorage.getItem('access_token') || localStorage.getItem('auth_token') || localStorage.getItem('token');
+    return localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+           localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+           localStorage.getItem('token') || sessionStorage.getItem('token');
   }
 
   private getHeaders(): HeadersInit {

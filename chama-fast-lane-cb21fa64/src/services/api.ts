@@ -412,39 +412,53 @@ class ApiService {
     }
   }
 
+  private getStorage(): Storage {
+    return localStorage.getItem('remember_me') === 'true' ? localStorage : sessionStorage;
+  }
+
+  private getFromAnyStorage(key: string): string | null {
+    return localStorage.getItem(key) || sessionStorage.getItem(key);
+  }
+
+  private removeFromAllStorage(key: string) {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  }
+
   // Método auxiliar para armazenar tokens
   storeAuthTokens(accessToken?: string, refreshToken?: string, token?: string) {
+    const storage = this.getStorage();
     if (accessToken) {
-      localStorage.setItem('access_token', accessToken);
+      storage.setItem('access_token', accessToken);
     }
     if (refreshToken) {
-      localStorage.setItem('refresh_token', refreshToken);
+      storage.setItem('refresh_token', refreshToken);
     }
     if (token) {
-      localStorage.setItem('auth_token', token);
+      storage.setItem('auth_token', token);
     }
   }
 
   // Método auxiliar para limpar tokens
   clearAuthTokens() {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('auth_token');
+    this.removeFromAllStorage('access_token');
+    this.removeFromAllStorage('refresh_token');
+    this.removeFromAllStorage('auth_token');
   }
 
   // Método auxiliar para obter token de acesso
   getAccessToken(): string | null {
-    return localStorage.getItem('access_token');
+    return this.getFromAnyStorage('access_token');
   }
 
   // Método auxiliar para obter refresh token
   getRefreshToken(): string | null {
-    return localStorage.getItem('refresh_token');
+    return this.getFromAnyStorage('refresh_token');
   }
 
   // Método para obter dados completos do usuário armazenados
   getUserData(): ApiUser | null {
-    const userData = localStorage.getItem('user_data');
+    const userData = this.getFromAnyStorage('user_data');
     if (userData) {
       try {
         return JSON.parse(userData);
@@ -659,6 +673,53 @@ class ApiService {
     } catch (error) {
       console.error('Erro na requisição autenticada DELETE:', error);
       return null;
+    }
+  }
+
+  async loginWithGoogle(idToken: string): Promise<LoginResponse> {
+    try {
+      const url = `${this.baseUrl}/api/users/google`;
+      log.info('Tentando login com Google em:', url);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ id_token: idToken }),
+      });
+
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        let errorData: any = {};
+        if (response.headers.get('content-type')?.includes('application/json')) {
+          try { errorData = JSON.parse(responseText); } catch {}
+        }
+        let errorMessage = `Erro ${response.status}: ${response.statusText}`;
+        if (errorData.error?.message) errorMessage = errorData.error.message;
+        else if (typeof errorData.error === 'string') errorMessage = errorData.error;
+        else if (errorData.message) errorMessage = errorData.message;
+        throw new Error(errorMessage);
+      }
+
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+        log.success('Login com Google bem-sucedido!', result);
+      } catch {
+        throw new Error('Resposta inválida da API.');
+      }
+
+      return { success: true, ...result };
+    } catch (error) {
+      log.error('Erro no login com Google:', error);
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        return { success: false, error: 'Não foi possível conectar à API.' };
+      }
+      return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
     }
   }
 

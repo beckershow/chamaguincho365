@@ -52,13 +52,34 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isDriver: boolean;
-  login: (email: string, password: string) => Promise<LoginResult>;
-  loginAsDriver: (email: string, password: string) => Promise<LoginResult>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>;
+  loginAsDriver: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>;
+  loginWithGoogle: (idToken: string, rememberMe?: boolean) => Promise<LoginResult>;
   logout: () => void;
   updateProfile: (data: Partial<User>) => void;
   // Mock data for admin
   allUsers: User[];
   updateUserStatus: (userId: string, status: ApprovalStatus, motivo?: string) => void;
+}
+
+// Helper para escolher storage baseado em rememberMe
+function getStorage(): Storage {
+  return localStorage.getItem('remember_me') === 'true' ? localStorage : sessionStorage;
+}
+
+function persistSet(key: string, value: string) {
+  const storage = getStorage();
+  storage.setItem(key, value);
+}
+
+function persistGet(key: string): string | null {
+  // Tentar localStorage primeiro (rememberMe), depois sessionStorage
+  return localStorage.getItem(key) || sessionStorage.getItem(key);
+}
+
+function persistRemove(key: string) {
+  localStorage.removeItem(key);
+  sessionStorage.removeItem(key);
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -185,10 +206,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const handleSessionExpired = useCallback(() => {
     setUser(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('user_data');
-    localStorage.removeItem('user_type');
-    localStorage.removeItem('driver_data');
+    persistRemove('user');
+    persistRemove('user_data');
+    persistRemove('user_type');
+    persistRemove('driver_data');
+    persistRemove('remember_me');
     apiService.clearAuthTokens();
     toast.warning('Sua sessão expirou. Faça login novamente.');
     navigate('/login');
@@ -202,29 +224,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [handleSessionExpired]);
 
   useEffect(() => {
-    // Check for stored session
-    const storedUser = localStorage.getItem('user');
+    // Check for stored session (localStorage ou sessionStorage)
+    const storedUser = persistGet('user');
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
-        // Validate that the stored user has the new structure with profile
         if (parsedUser && parsedUser.profile && parsedUser.type) {
           setUser(parsedUser);
         } else {
-          // Clear invalid/old data
-          localStorage.removeItem('user');
+          persistRemove('user');
         }
       } catch {
-        localStorage.removeItem('user');
+        persistRemove('user');
       }
     }
   }, []);
 
-  const login = async (email: string, password: string): Promise<LoginResult> => {
+  const login = async (email: string, password: string, rememberMe?: boolean): Promise<LoginResult> => {
+    // Salvar preferência de persistência
+    if (rememberMe) {
+      localStorage.setItem('remember_me', 'true');
+    } else {
+      localStorage.removeItem('remember_me');
+    }
+
     // Admin login (mock - mantém o acesso admin local)
     if (email === 'chamaguincho365@gmail.com' && password === '123') {
       setUser(testAdmin);
-      localStorage.setItem('user', JSON.stringify(testAdmin));
+      persistSet('user', JSON.stringify(testAdmin));
       return { success: true };
     }
 
@@ -259,7 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
 
         setUser(loggedUser);
-        localStorage.setItem('user', JSON.stringify(loggedUser));
+        persistSet('user', JSON.stringify(loggedUser));
 
         // Armazenar dados completos do usuário da API
         const fullUserData = {
@@ -282,7 +309,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           plan_reactivated_at: userData.plan_reactivated_at,
           created_at: userData.created_at,
         };
-        localStorage.setItem('user_data', JSON.stringify(fullUserData));
+        persistSet('user_data', JSON.stringify(fullUserData));
 
         return { success: true };
       }
@@ -291,7 +318,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const foundUser = allUsers.find(u => u.email === email);
       if (foundUser && password === '123') {
         setUser(foundUser);
-        localStorage.setItem('user', JSON.stringify(foundUser));
+        persistSet('user', JSON.stringify(foundUser));
         return { success: true };
       }
 
@@ -303,7 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const foundUser = allUsers.find(u => u.email === email);
       if (foundUser && password === '123') {
         setUser(foundUser);
-        localStorage.setItem('user', JSON.stringify(foundUser));
+        persistSet('user', JSON.stringify(foundUser));
         return { success: true };
       }
 
@@ -311,7 +338,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const loginAsDriver = async (email: string, password: string): Promise<LoginResult> => {
+  const loginAsDriver = async (email: string, password: string, rememberMe?: boolean): Promise<LoginResult> => {
+    if (rememberMe) {
+      localStorage.setItem('remember_me', 'true');
+    } else {
+      localStorage.removeItem('remember_me');
+    }
+
     try {
       // Tenta fazer login via API de drivers
       const result = await apiService.loginDriver(email, password);
@@ -359,8 +392,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
 
         setUser(loggedUser);
-        localStorage.setItem('user', JSON.stringify(loggedUser));
-        localStorage.setItem('user_type', 'driver');
+        persistSet('user', JSON.stringify(loggedUser));
+        persistSet('user_type', 'driver');
 
         // Armazenar dados completos do driver (incluindo dados do veículo)
         const fullDriverData = {
@@ -378,7 +411,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             expiry: driverDetailsData.cnh_expiry,
           },
         };
-        localStorage.setItem('driver_data', JSON.stringify(fullDriverData));
+        persistSet('driver_data', JSON.stringify(fullDriverData));
 
         return { success: true };
       }
@@ -390,12 +423,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithGoogle = async (idToken: string, rememberMe?: boolean): Promise<LoginResult> => {
+    if (rememberMe) {
+      localStorage.setItem('remember_me', 'true');
+    } else {
+      localStorage.removeItem('remember_me');
+    }
+
+    try {
+      const result = await apiService.loginWithGoogle(idToken);
+
+      const responseData = (result as any).data;
+      const userData = responseData?.user || result.user;
+      const accessToken = responseData?.accessToken || result.accessToken;
+      const refreshToken = responseData?.refreshToken || result.refreshToken;
+      const token = responseData?.token || result.token;
+
+      if (result.success && userData) {
+        apiService.storeAuthTokens(accessToken, refreshToken, token);
+
+        const loggedUser: User = {
+          id: userData.id.toString(),
+          email: userData.email,
+          name: userData.display_name,
+          avatar: userData.photo_url || undefined,
+          type: 'cliente',
+          profile: {
+            whatsapp: userData.phone_number || '',
+          } as ClienteProfile,
+          cpf_cnpj: userData.cpf_cnpj,
+          phone_number: userData.phone_number,
+          createdAt: userData.created_at,
+        };
+
+        setUser(loggedUser);
+        persistSet('user', JSON.stringify(loggedUser));
+
+        const fullUserData = {
+          id: userData.id,
+          uid: userData.uid,
+          provider: userData.provider,
+          email: userData.email,
+          email_verified: userData.email_verified,
+          phone_number: userData.phone_number,
+          display_name: userData.display_name,
+          photo_url: userData.photo_url,
+          cpf_cnpj: userData.cpf_cnpj,
+          plan_status: userData.plan_status,
+          plan_valid_until: userData.plan_valid_until,
+          created_at: userData.created_at,
+        };
+        persistSet('user_data', JSON.stringify(fullUserData));
+
+        return { success: true };
+      }
+
+      return { success: false, error: result.error };
+    } catch (error) {
+      console.error('Erro no login com Google:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
+    }
+  };
+
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('user_data');
-    localStorage.removeItem('user_type');
-    localStorage.removeItem('driver_data');
+    persistRemove('user');
+    persistRemove('user_data');
+    persistRemove('user_type');
+    persistRemove('driver_data');
+    persistRemove('remember_me');
     apiService.clearAuthTokens();
   };
 
@@ -403,7 +499,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) {
       const updatedUser = { ...user, ...data };
       setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      persistSet('user', JSON.stringify(updatedUser));
     }
   };
 
@@ -434,6 +530,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isDriver,
       login,
       loginAsDriver,
+      loginWithGoogle,
       logout,
       updateProfile,
       allUsers,
