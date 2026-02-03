@@ -23,7 +23,7 @@ export function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
   const isHomePage = location.pathname === '/';
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isDriver } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -61,16 +61,16 @@ export function Navbar() {
           {/* Mobile Navigation - Scrollable */}
           {/* Mobile Navigation - Scrollable */}
           <div className="flex lg:hidden overflow-x-auto scrollbar-hide gap-0.5 ml-2 flex-1 items-center">
-            {navLinks.map(link => (
-              <a 
-                key={link.href} 
-                href={isHomePage ? link.href : `/${link.href}`} 
+            {navLinks.filter(link => !(isDriver && link.href === '#planos')).map(link => (
+              <a
+                key={link.href}
+                href={isHomePage ? link.href : `/${link.href}`}
                 onClick={e => {
                   if (isHomePage) {
                     e.preventDefault();
                     handleNavClick(link.href);
                   }
-                }} 
+                }}
                 className={`text-[10px] font-medium transition-colors whitespace-nowrap px-1 py-0.5 rounded-full ${isScrolled ? 'text-gray-800 hover:text-primary hover:bg-gray-100' : 'text-white hover:text-primary hover:bg-white/10'}`}
               >
                 {link.label}
@@ -80,16 +80,16 @@ export function Navbar() {
 
           {/* Desktop Navigation */}
           <div className="hidden lg:flex items-center gap-8">
-            {navLinks.map(link => (
-              <a 
-                key={link.href} 
-                href={isHomePage ? link.href : `/${link.href}`} 
+            {navLinks.filter(link => !(isDriver && link.href === '#planos')).map(link => (
+              <a
+                key={link.href}
+                href={isHomePage ? link.href : `/${link.href}`}
                 onClick={e => {
                   if (isHomePage) {
                     e.preventDefault();
                     handleNavClick(link.href);
                   }
-                }} 
+                }}
                 className={`text-sm font-medium transition-colors ${isScrolled ? 'text-gray-800 hover:text-primary' : 'text-white hover:text-primary'}`}
               >
                 {link.label}

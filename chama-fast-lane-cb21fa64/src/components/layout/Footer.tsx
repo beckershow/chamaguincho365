@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom';
 import { Phone, Mail, MapPin, MessageCircle } from 'lucide-react';
 import logo from '@/assets/logo-dark.png';
+import { useAuth } from '@/contexts/AuthContext';
 
 export function Footer() {
+  const { isDriver } = useAuth();
+
   return (
     <footer id="contato" className="bg-foreground text-background">
       <div className="section-container py-10 md:py-12 lg:py-16 px-4">
@@ -42,11 +45,13 @@ export function Footer() {
                   Como Funciona
                 </a>
               </li>
-              <li>
-                <a href="#planos" className="text-background/70 hover:text-primary transition-colors text-xs md:text-sm">
-                  Planos
-                </a>
-              </li>
+              {!isDriver && (
+                <li>
+                  <a href="#planos" className="text-background/70 hover:text-primary transition-colors text-xs md:text-sm">
+                    Planos
+                  </a>
+                </li>
+              )}
               <li>
                 <a href="#cobertura" className="text-background/70 hover:text-primary transition-colors text-xs md:text-sm">
                   Cobertura

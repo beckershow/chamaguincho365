@@ -95,12 +95,16 @@ function validateCPF(cpf: string): boolean {
 export default function PlanCheckout() {
   const { planCode } = useParams<{ planCode: string }>();
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isDriver } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [billingType, setBillingType] = useState<BillingType>('PIX');
   const [isPolling, setIsPolling] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollingStartRef = useRef<number>(0);
+
+  // PIX inline data
+  const [pixData, setPixData] = useState<{ qrCode: string; payload: string; value: number } | null>(null);
+  const [pixPaymentId, setPixPaymentId] = useState<string | null>(null);
 
   // Credit card fields (never persisted)
   const [cardNumber, setCardNumber] = useState('');
@@ -125,10 +129,15 @@ export default function PlanCheckout() {
       navigate('/login');
       return;
     }
+    if (isDriver) {
+      toast.error('Planos não disponíveis para guincheiros');
+      navigate('/');
+      return;
+    }
     if (!validPlanCode) {
       navigate('/');
     }
-  }, [isAuthenticated, validPlanCode, navigate]);
+  }, [isAuthenticated, isDriver, validPlanCode, navigate]);
 
   // Pre-fill holder info from user
   useEffect(() => {
@@ -148,7 +157,7 @@ export default function PlanCheckout() {
 
   const plan = validPlanCode ? PLAN_INFO[validPlanCode] : null;
 
-  const startPolling = useCallback(() => {
+  const startPolling = useCallback((paymentId: string) => {
     setIsPolling(true);
     pollingStartRef.current = Date.now();
     pollingRef.current = setInterval(async () => {
@@ -156,6 +165,36 @@ export default function PlanCheckout() {
       if (Date.now() - pollingStartRef.current > 10 * 60 * 1000) {
         if (pollingRef.current) clearInterval(pollingRef.current);
         setIsPolling(false);
+        toast.info('Tempo limite excedido. Verifique o status no perfil.');
+        return;
+      }
+      try {
+        // Check payment status using the new endpoint
+        const statusRes = await subscriptionService.getPaymentStatus(paymentId);
+
+        if (statusRes.isPaid) {
+          // Payment confirmed!
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          setIsPolling(false);
+          toast.success('Pagamento confirmado! Assinatura ativada.');
+          navigate('/perfil?tab=subscription');
+        }
+      } catch {
+        // Ignore polling errors silently
+      }
+    }, 4000); // Poll every 4 seconds
+  }, [navigate]);
+
+  // Fallback polling for when we don't have a specific payment ID (e.g., boleto, PIX fallback)
+  const startSubscriptionPolling = useCallback(() => {
+    setIsPolling(true);
+    pollingStartRef.current = Date.now();
+    pollingRef.current = setInterval(async () => {
+      // Stop after 10 minutes
+      if (Date.now() - pollingStartRef.current > 10 * 60 * 1000) {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        setIsPolling(false);
+        toast.info('Tempo limite excedido. Verifique o status no perfil.');
         return;
       }
       try {
@@ -169,13 +208,30 @@ export default function PlanCheckout() {
           navigate('/perfil?tab=subscription');
         }
       } catch {
-        // ignore polling errors
+        // Ignore polling errors silently
       }
-    }, 30000);
+    }, 30000); // Poll every 30 seconds for subscription status
   }, [navigate]);
 
   const handleCheckStatus = async () => {
     try {
+      // Check payment status directly if we have the payment ID
+      if (pixPaymentId) {
+        const statusRes = await subscriptionService.getPaymentStatus(pixPaymentId);
+
+        if (statusRes.isPaid) {
+          toast.success('Pagamento confirmado! Assinatura ativada.');
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          setIsPolling(false);
+          navigate('/perfil?tab=subscription');
+          return;
+        } else {
+          toast.info('Pagamento ainda nao confirmado. Aguarde alguns instantes.');
+          return;
+        }
+      }
+
+      // Fallback: check subscription (when pixPaymentId is not available)
       const sub = await subscriptionService.getMySubscription();
       if (sub.local && sub.local.status === 'ACTIVE') {
         toast.success('Pagamento confirmado! Assinatura ativada.');
@@ -183,7 +239,8 @@ export default function PlanCheckout() {
       } else {
         toast.info('Pagamento ainda nao confirmado. Aguarde alguns instantes.');
       }
-    } catch {
+    } catch (error) {
+      console.error('Error checking payment status:', error);
       toast.error('Erro ao verificar status.');
     }
   };
@@ -250,12 +307,123 @@ export default function PlanCheckout() {
       }
 
       const result = await subscriptionService.createSubscription(payload);
+      console.log('[PlanCheckout] createSubscription result:', JSON.stringify(result, null, 2));
 
-      // PIX or DEBIT_CARD: redirect to invoiceUrl
-      if (billingType !== 'CREDIT_CARD' && result.subscription?.invoiceUrl) {
+      // PIX: fetch QR code from first payment
+      if (billingType === 'PIX') {
+        try {
+          // Check if payment ID comes directly in the subscription response
+          const directPaymentId = (result as any)?.payment?.id || (result.subscription as any)?.paymentId;
+          console.log('[PlanCheckout] Direct payment ID from response:', directPaymentId);
+
+          if (directPaymentId) {
+            // We have the payment ID directly, fetch QR code
+            try {
+              console.log('[PlanCheckout] Fetching QR code for direct payment:', directPaymentId);
+              const pixRes = await subscriptionService.getPaymentPixQrCode(directPaymentId);
+              console.log('[PlanCheckout] QR code response:', JSON.stringify(pixRes, null, 2));
+
+              const encodedImage = pixRes?.encodedImage || null;
+              const pixPayload = pixRes?.payload || pixRes?.pixTransaction || null;
+              const pixValue = pixRes?.value || plan!.price;
+
+              if (encodedImage && pixPayload) {
+                const img = encodedImage.startsWith('data:')
+                  ? encodedImage
+                  : `data:image/png;base64,${encodedImage}`;
+                setPixData({ qrCode: img, payload: pixPayload, value: pixValue });
+                setPixPaymentId(directPaymentId);
+                toast.success('QR Code PIX gerado! Escaneie para pagar.');
+                startPolling(directPaymentId);
+                return;
+              }
+            } catch (directError) {
+              console.error('[PlanCheckout] Direct QR code fetch failed:', directError);
+            }
+          }
+
+          // Fallback: get payments from subscription
+          const subId = result.subscription?.id;
+          console.log('[PlanCheckout] Subscription ID:', subId);
+
+          if (subId) {
+            // Get payments for this subscription
+            const payments = await subscriptionService.getSubscriptionPayments(subId);
+            console.log('[PlanCheckout] Payments response:', JSON.stringify(payments, null, 2));
+
+            const paymentsList = (payments as any)?.payments || (payments as any)?.data || [];
+            console.log('[PlanCheckout] Payments list:', paymentsList);
+
+            const firstPayment = paymentsList[0];
+            console.log('[PlanCheckout] First payment:', firstPayment);
+
+            if (firstPayment?.id) {
+              // Try /qrcode first, fallback to /payments/:id
+              let encodedImage: string | null = null;
+              let pixPayload: string | null = null;
+              let pixValue = plan!.price;
+
+              try {
+                console.log('[PlanCheckout] Fetching QR code for payment:', firstPayment.id);
+                const pixRes = await subscriptionService.getPaymentPixQrCode(firstPayment.id);
+                console.log('[PlanCheckout] QR code response:', JSON.stringify(pixRes, null, 2));
+
+                encodedImage = pixRes?.encodedImage || null;
+                pixPayload = pixRes?.payload || pixRes?.pixTransaction || null;
+                if (pixRes?.value) pixValue = pixRes.value;
+              } catch (qrError) {
+                console.error('[PlanCheckout] QR code endpoint failed:', qrError);
+                // /qrcode failed, try GET /payments/:id
+                try {
+                  const payRes = await subscriptionService.getPayment(firstPayment.id);
+                  console.log('[PlanCheckout] Payment fallback response:', JSON.stringify(payRes, null, 2));
+                  const p = payRes?.payment;
+                  encodedImage = p?.encodedImage || null;
+                  pixPayload = p?.pixTransaction || null;
+                  if (p?.value) pixValue = p.value;
+                } catch (fallbackError) {
+                  console.error('[PlanCheckout] Payment fallback also failed:', fallbackError);
+                }
+              }
+
+              console.log('[PlanCheckout] Final QR data - encodedImage:', !!encodedImage, 'pixPayload:', !!pixPayload);
+
+              if (encodedImage && pixPayload) {
+                const img = encodedImage.startsWith('data:')
+                  ? encodedImage
+                  : `data:image/png;base64,${encodedImage}`;
+                setPixData({ qrCode: img, payload: pixPayload, value: pixValue });
+                setPixPaymentId(firstPayment.id);
+                toast.success('QR Code PIX gerado! Escaneie para pagar.');
+                startPolling(firstPayment.id);
+                return;
+              } else {
+                console.warn('[PlanCheckout] QR code data incomplete - encodedImage:', !!encodedImage, 'pixPayload:', !!pixPayload);
+              }
+            } else {
+              console.warn('[PlanCheckout] No payment ID found in first payment');
+            }
+          } else {
+            console.warn('[PlanCheckout] No subscription ID in result');
+          }
+        } catch (e) {
+          console.error('[PlanCheckout] Failed to fetch PIX QR code:', e);
+        }
+
+        // Fallback: open invoiceUrl
+        if (result.subscription?.invoiceUrl) {
+          toast.success('Assinatura criada! Redirecionando para pagamento...');
+          window.open(result.subscription.invoiceUrl, '_blank');
+          startSubscriptionPolling();
+          return;
+        }
+      }
+
+      // BOLETO: redirect to invoiceUrl
+      if (billingType === 'BOLETO' && result.subscription?.invoiceUrl) {
         toast.success('Assinatura criada! Redirecionando para pagamento...');
         window.open(result.subscription.invoiceUrl, '_blank');
-        startPolling();
+        startSubscriptionPolling();
         return;
       }
 
@@ -313,9 +481,57 @@ export default function PlanCheckout() {
           </Card>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* PIX QR Code inline */}
+        {pixData && (
+          <Card className="mb-6 border-primary/50">
+            <CardHeader className="text-center pb-2">
+              <CardTitle className="flex items-center justify-center gap-2">
+                <QrCode className="w-5 h-5" />
+                Pagamento via PIX
+              </CardTitle>
+              <CardDescription>Escaneie o QR Code ou copie o codigo PIX abaixo</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center gap-4">
+              <img
+                src={pixData.qrCode}
+                alt="QR Code PIX"
+                className="w-64 h-64 border rounded-lg"
+              />
+              <div className="w-full max-w-md space-y-2">
+                <Label className="text-sm font-medium">PIX Copia e Cola</Label>
+                <div className="flex gap-2">
+                  <Input value={pixData.payload} readOnly className="text-xs font-mono" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(pixData.payload);
+                      toast.success('Codigo PIX copiado!');
+                    }}
+                  >
+                    Copiar
+                  </Button>
+                </div>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold">
+                  R$ {pixData.value.toFixed(2).replace('.', ',')}
+                </p>
+                <div className="flex items-center gap-2 mt-2 text-yellow-600 dark:text-yellow-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm font-medium">Aguardando pagamento...</span>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleCheckStatus}>
+                Ja paguei, verificar agora
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className={`grid grid-cols-1 lg:grid-cols-3 gap-6`}>
           {/* Formulario */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className={`lg:col-span-2 space-y-6 ${pixData ? 'hidden' : ''}`}>
             {/* Forma de Pagamento */}
             <Card>
               <CardHeader>

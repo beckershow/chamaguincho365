@@ -322,7 +322,7 @@ export function UserMenu() {
           const driverData = (driverDetails as any)?.data?.driver || driverDetails?.driver;
 
           if (driverData) {
-            const documents = driverData.documents || [];
+            const documents = driverData.documents || {};
             const details = driverData.details || {};
 
             // Formatar data de validade da CNH se vier no formato ISO
@@ -343,10 +343,10 @@ export function UserMenu() {
               }
             }
 
-            // Buscar documentos
-            const cnhDoc = documents.find((d: any) => d.type === 'CNH');
-            const crlvDoc = documents.find((d: any) => d.type === 'CRLV');
-            const selfieDoc = documents.find((d: any) => d.type === 'SELFIE');
+            // Acessar documentos como objeto (não array)
+            const cnhDoc = documents.cnh || {};
+            const crlvDoc = documents.crlv || {};
+            const selfieDoc = documents.selfie || {};
 
             setDriverForm({
               name: driverData.name || '',

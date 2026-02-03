@@ -232,6 +232,50 @@ class SubscriptionService {
     return this.handleResponse<PaymentsResponse>(response);
   }
 
+  /** GET /api/asaas/payments/:id/qrcode */
+  async getPaymentPixQrCode(paymentId: string): Promise<{
+    success: boolean;
+    paymentId: string;
+    status?: string;
+    value?: number;
+    payload: string;
+    encodedImage: string;
+    invoiceUrl?: string;
+    expirationDate?: string;
+  }> {
+    const response = await fetch(`${API_BASE_URL}/api/asaas/payments/${paymentId}/qrcode`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  /** GET /api/asaas/payments/:id */
+  async getPayment(paymentId: string): Promise<{ success: boolean; payment: any }> {
+    const response = await fetch(`${API_BASE_URL}/api/asaas/payments/${paymentId}`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  /** GET /api/asaas/payments/:id/status */
+  async getPaymentStatus(paymentId: string): Promise<{
+    success: boolean;
+    paymentId: string;
+    status: string;
+    isPaid: boolean;
+    value: number;
+    dueDate: string;
+    paymentDate?: string;
+  }> {
+    const response = await fetch(`${API_BASE_URL}/api/asaas/payments/${paymentId}/status`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
   /** DELETE /api/asaas/subscriptions/:id */
   async cancelSubscription(id: string): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE_URL}/api/asaas/subscriptions/${id}`, {

@@ -10,17 +10,21 @@ import { Testimonials } from '@/components/sections/Testimonials';
 import { FAQ } from '@/components/sections/FAQ';
 import { FinalCTA } from '@/components/sections/FinalCTA';
 import { AppDownload } from '@/components/sections/AppDownload';
+import { useAuth } from '@/contexts/AuthContext';
+
 const Index = () => {
+  const { isDriver } = useAuth();
+
   return <div className="min-h-screen w-full overflow-x-hidden">
       <Navbar />
       <main className="w-full overflow-x-hidden">
         <div className="flex justify-center pt-16 pb-1 bg-secondary-foreground">
-          
+
         </div>
         <Hero />
         <HowItWorks />
         <Benefits />
-        <Pricing />
+        {!isDriver && <Pricing />}
         <Coverage />
         <Testimonials />
         <FAQ />

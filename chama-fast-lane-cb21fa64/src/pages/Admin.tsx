@@ -464,13 +464,13 @@ export default function Admin() {
                             </h4>
                             <div className="space-y-3 text-muted-foreground">
                               {(['cnh', 'crlv', 'selfie'] as const).map((docType) => {
-                                const doc = driver.documents[docType];
+                                const doc = driver.documents?.[docType];
                                 const label = docType.toUpperCase();
                                 return (
                                   <div key={docType}>
                                     <p>
                                       {label}: {doc
-                                        ? `${doc.status} (enviado ${formatDate(doc.uploaded_at)})`
+                                        ? doc.status_label || doc.status || 'Enviado'
                                         : 'Não enviado'}
                                     </p>
                                     {doc && (
