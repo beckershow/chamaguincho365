@@ -41,9 +41,13 @@ const estados = [
 ];
 
 const tiposGuincho = [
-  { value: 'Reboque', label: 'Reboque' },
-  { value: 'Pesado', label: 'Pesado' },
+  { value: 'Caminhao', label: 'Caminhão' },
+  { value: 'Carro', label: 'Carro' },
+  { value: 'Moto', label: 'Moto' },
+  { value: 'Utilitario', label: 'Utilitário' },
   { value: 'Plataforma', label: 'Plataforma' },
+  { value: 'Asa-delta', label: 'Asa-delta' },
+  { value: 'Reboque Pesado', label: 'Reboque Pesado' },
 ];
 
 interface ClienteProfile {
@@ -109,6 +113,16 @@ interface DriverProfileForm {
   rg: string;
   issuing_agency: string;
   issuing_state: string;
+  // Dados bancários
+  bank_account_name: string;
+  bank_code: string;
+  bank_agency: string;
+  bank_account_number: string;
+  bank_account_digit: string;
+  bank_account_type: string;
+  pix_key_type: string;
+  pix_key: string;
+  income_value: string;
   // Documentos
   cnh_document?: DriverDocument;
   crlv_document?: DriverDocument;
@@ -130,6 +144,21 @@ const formatWhatsApp = (value: string) => {
 const formatCep = (value: string) => {
   const numbers = value.replace(/\D/g, '');
   return numbers.replace(/(\d{5})(\d)/, '$1-$2').slice(0, 9);
+};
+
+const formatCPFCNPJ = (value: string) => {
+  const n = value.replace(/\D/g, '').slice(0, 14);
+  if (n.length <= 11) {
+    return n
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  }
+  return n
+    .replace(/(\d{2})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1/$2')
+    .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
 };
 
 const formatDate = (value: string) => {
@@ -221,6 +250,15 @@ export function UserMenu() {
     rg: '',
     issuing_agency: '',
     issuing_state: '',
+    bank_account_name: '',
+    bank_code: '',
+    bank_agency: '',
+    bank_account_number: '',
+    bank_account_digit: '',
+    bank_account_type: '',
+    pix_key_type: '',
+    pix_key: '',
+    income_value: '',
     cnh_document: undefined,
     crlv_document: undefined,
     selfie_document: undefined,
@@ -251,6 +289,43 @@ export function UserMenu() {
 
   // Estado para loading dos dados do perfil
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
+
+  const lookupCep = async (cep: string, target: 'cliente' | 'driver') => {
+    const digits = cep.replace(/\D/g, '');
+    if (digits.length !== 8) return;
+    setCepLoading(true);
+    try {
+      const data = await apiService.getCep(digits);
+      if (data) {
+        if (target === 'cliente') {
+          setClienteForm((prev) => ({
+            ...prev,
+            street: data.street || prev.street,
+            neighborhood: data.neighborhood || prev.neighborhood,
+            city: data.city || prev.city,
+            state: data.state || prev.state,
+            complement: data.complement || prev.complement,
+          }));
+        } else {
+          setDriverForm((prev) => ({
+            ...prev,
+            street: data.street || prev.street,
+            neighborhood: data.neighborhood || prev.neighborhood,
+            city: data.city || prev.city,
+            state: data.state || prev.state,
+            complement: data.complement || prev.complement,
+          }));
+        }
+      } else {
+        toast.error('CEP não encontrado');
+      }
+    } catch {
+      toast.error('Erro ao buscar CEP');
+    } finally {
+      setCepLoading(false);
+    }
+  };
 
   useEffect(() => {
     const loadUserDetails = async () => {
@@ -276,7 +351,7 @@ export function UserMenu() {
             setClienteForm({
               name: userData.display_name || userData.name || user.name || '',
               whatsapp: userData.phone_number || '',
-              cpf_cnpj: userData.cpf_cnpj || user.cpf_cnpj || '',
+              cpf_cnpj: formatCPFCNPJ(userData.cpf_cnpj || user.cpf_cnpj || ''),
               birth_date: birthDate,
               postal_code: details.postal_code ? formatCep(details.postal_code) : '',
               street: details.street || '',
@@ -297,7 +372,7 @@ export function UserMenu() {
           setClienteForm({
             name: user.name || '',
             whatsapp: user.phone_number || '',
-            cpf_cnpj: user.cpf_cnpj || '',
+            cpf_cnpj: formatCPFCNPJ(user.cpf_cnpj || ''),
             birth_date: '',
             postal_code: '',
             street: '',
@@ -372,6 +447,15 @@ export function UserMenu() {
               rg: details.rg || '',
               issuing_agency: details.issuing_agency || '',
               issuing_state: details.issuing_state || '',
+              bank_account_name: details.bank_account_name || '',
+              bank_code: details.bank_code || '',
+              bank_agency: details.bank_agency || '',
+              bank_account_number: details.bank_account_number || '',
+              bank_account_digit: details.bank_account_digit || '',
+              bank_account_type: details.bank_account_type || '',
+              pix_key_type: details.pix_key_type || '',
+              pix_key: details.pix_key || '',
+              income_value: details.income_value?.toString() || '',
               cnh_document: cnhDoc,
               crlv_document: crlvDoc,
               selfie_document: selfieDoc,
@@ -406,6 +490,15 @@ export function UserMenu() {
             rg: '',
             issuing_agency: '',
             issuing_state: '',
+            bank_account_name: '',
+            bank_code: '',
+            bank_agency: '',
+            bank_account_number: '',
+            bank_account_digit: '',
+            bank_account_type: '',
+            pix_key_type: '',
+            pix_key: '',
+            income_value: '',
             status: profile.status || 'pendente',
           });
         } finally {
@@ -648,7 +741,7 @@ export function UserMenu() {
         display_name: clienteForm.name,
         email: user.email,
         phone_number: clienteForm.whatsapp,
-        cpf_cnpj: clienteForm.cpf_cnpj,
+        cpf_cnpj: clienteForm.cpf_cnpj.replace(/\D/g, ''),
         details: {
           birth_date: birthDateISO,
           postal_code: clienteForm.postal_code.replace(/\D/g, ''),
@@ -667,33 +760,29 @@ export function UserMenu() {
 
       try {
         const result = await apiService.updateUserDetails(updateData);
-        if (result) {
-          // Atualizar o contexto local com todos os dados
-          const updatedUserData: Partial<typeof user> = {
-            name: clienteForm.name,
-            phone_number: clienteForm.whatsapp,
-            cpf_cnpj: clienteForm.cpf_cnpj,
-            profile: updateData.details as any,
-          };
+        // Atualizar o contexto local com todos os dados
+        const updatedUserData: Partial<typeof user> = {
+          name: clienteForm.name,
+          phone_number: clienteForm.whatsapp,
+          cpf_cnpj: clienteForm.cpf_cnpj,
+          profile: updateData.details as any,
+        };
 
-          // Se a foto foi alterada, incluir o preview como avatar
-          if (previewPhoto) {
-            updatedUserData.avatar = previewPhoto;
-          }
-
-          // Se a API retornou dados atualizados, usar o photo_url
-          if (result.user?.photo_url) {
-            updatedUserData.avatar = result.user.photo_url;
-          }
-
-          updateProfile(updatedUserData);
-          toast.success('Perfil atualizado com sucesso!');
-          setIsProfileOpen(false);
-        } else {
-          toast.error('Erro ao atualizar perfil');
+        // Se a foto foi alterada, incluir o preview como avatar
+        if (previewPhoto) {
+          updatedUserData.avatar = previewPhoto;
         }
+
+        // Se a API retornou dados atualizados, usar o photo_url
+        if ((result as any)?.user?.photo_url) {
+          updatedUserData.avatar = (result as any).user.photo_url;
+        }
+
+        updateProfile(updatedUserData);
+        toast.success('Perfil atualizado com sucesso!');
+        setIsProfileOpen(false);
       } catch (error) {
-        toast.error('Erro ao atualizar perfil');
+        toast.error(error instanceof Error ? error.message : 'Erro ao salvar perfil');
       }
       return;
     } else if (user.type === 'motorista') {
@@ -782,35 +871,40 @@ export function UserMenu() {
           rg: driverForm.rg,
           issuing_agency: driverForm.issuing_agency,
           issuing_state: driverForm.issuing_state,
+          bank_account_name: driverForm.bank_account_name,
+          bank_code: driverForm.bank_code,
+          bank_agency: driverForm.bank_agency,
+          bank_account_number: driverForm.bank_account_number,
+          bank_account_digit: driverForm.bank_account_digit,
+          bank_account_type: driverForm.bank_account_type,
+          pix_key_type: driverForm.pix_key_type,
+          pix_key: driverForm.pix_key,
+          income_value: driverForm.income_value,
         },
       };
 
       try {
-        const result = await apiService.updateDriverDetails(updateData);
-        if (result) {
-          // Atualizar o contexto local
-          updateProfile({
-            name: driverForm.name,
-            phone_number: driverForm.phone,
-            profile: {
-              whatsapp: driverForm.phone,
-              cidade: '',
-              estado: '',
-              possuiCaminhao: 'sim',
-              tiposGuincho: [driverForm.vehicle_type],
-              disponibilidade: '24h',
-              areaAtuacao: 100,
-              observacoes: '',
-              status: driverForm.status,
-            },
-          });
-          toast.success('Perfil atualizado com sucesso!');
-          setIsProfileOpen(false);
-        } else {
-          toast.error('Erro ao atualizar perfil');
-        }
+        await apiService.updateDriverDetails(updateData);
+        // Atualizar o contexto local
+        updateProfile({
+          name: driverForm.name,
+          phone_number: driverForm.phone,
+          profile: {
+            whatsapp: driverForm.phone,
+            cidade: '',
+            estado: '',
+            possuiCaminhao: 'sim',
+            tiposGuincho: [driverForm.vehicle_type],
+            disponibilidade: '24h',
+            areaAtuacao: 100,
+            observacoes: '',
+            status: driverForm.status,
+          },
+        });
+        toast.success('Perfil atualizado com sucesso!');
+        setIsProfileOpen(false);
       } catch (error) {
-        toast.error('Erro ao atualizar perfil');
+        toast.error(error instanceof Error ? error.message : 'Erro ao salvar perfil');
       }
     }
   };
@@ -826,7 +920,7 @@ export function UserMenu() {
         <DropdownMenuTrigger asChild>
           <button className="flex items-center gap-2 focus:outline-none">
             <Avatar className="h-9 w-9 cursor-pointer border-2 border-primary/50 hover:border-primary transition-colors">
-              <AvatarImage src={user.avatar} alt={user.name} />
+              <AvatarImage src={apiService.getAuthImageUrl(user.avatar)} alt={user.name} />
               <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
                 {getInitials(user.name)}
               </AvatarFallback>
@@ -925,7 +1019,7 @@ export function UserMenu() {
             <div className="flex justify-center">
               <div className="relative">
                 <Avatar className="h-24 w-24 cursor-pointer" onClick={handlePhotoClick}>
-                  <AvatarImage src={previewPhoto || user.avatar} alt={user.name} />
+                  <AvatarImage src={previewPhoto || apiService.getAuthImageUrl(user.avatar)} alt={user.name} />
                   <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-semibold">
                     {getInitials(user.type === 'cliente' ? clienteForm.name : driverForm.name)}
                   </AvatarFallback>
@@ -973,13 +1067,17 @@ export function UserMenu() {
             {/* CPF/CNPJ - somente para cliente */}
             {user.type === 'cliente' && (
               <div className="space-y-2">
-                <Label htmlFor="cpf_cnpj">CPF/CNPJ</Label>
+                <Label htmlFor="cpf_cnpj">CPF / CNPJ</Label>
                 <Input
                   id="cpf_cnpj"
+                  placeholder="000.000.000-00 ou 00.000.000/0000-00"
                   value={clienteForm.cpf_cnpj}
-                  disabled
-                  className="bg-muted"
+                  onChange={(e) =>
+                    setClienteForm({ ...clienteForm, cpf_cnpj: formatCPFCNPJ(e.target.value) })
+                  }
+                  maxLength={18}
                 />
+                <p className="text-xs text-muted-foreground">CPF (11 dígitos) ou CNPJ (14 dígitos)</p>
               </div>
             )}
 
@@ -1026,14 +1124,31 @@ export function UserMenu() {
                   {/* CEP */}
                   <div className="space-y-2">
                     <Label htmlFor="postal_code">CEP <span className="text-destructive">*</span></Label>
-                    <Input
-                      id="postal_code"
-                      placeholder="00000-000"
-                      value={clienteForm.postal_code}
-                      onChange={(e) => setClienteForm({ ...clienteForm, postal_code: formatCep(e.target.value) })}
-                      maxLength={9}
-                      required
-                    />
+                    <div className="relative">
+                      <Input
+                        id="postal_code"
+                        placeholder="00000-000"
+                        value={clienteForm.postal_code}
+                        onChange={(e) => {
+                          const v = formatCep(e.target.value);
+                          setClienteForm({ ...clienteForm, postal_code: v });
+                          lookupCep(v, 'cliente');
+                        }}
+                        onBlur={(e) => lookupCep(e.target.value, 'cliente')}
+                        maxLength={9}
+                        required
+                        className={cepLoading ? 'pr-9' : ''}
+                      />
+                      {cepLoading && (
+                        <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                      )}
+                    </div>
+                    {cepLoading && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Buscando endereço...
+                      </p>
+                    )}
                   </div>
 
                   {/* Rua e Número */}
@@ -1494,13 +1609,30 @@ export function UserMenu() {
                   {/* CEP */}
                   <div className="space-y-2">
                     <Label htmlFor="driver_postal_code">CEP</Label>
-                    <Input
-                      id="driver_postal_code"
-                      placeholder="00000-000"
-                      value={driverForm.postal_code}
-                      onChange={(e) => setDriverForm({ ...driverForm, postal_code: formatCep(e.target.value) })}
-                      maxLength={9}
-                    />
+                    <div className="relative">
+                      <Input
+                        id="driver_postal_code"
+                        placeholder="00000-000"
+                        value={driverForm.postal_code}
+                        onChange={(e) => {
+                          const v = formatCep(e.target.value);
+                          setDriverForm({ ...driverForm, postal_code: v });
+                          lookupCep(v, 'driver');
+                        }}
+                        onBlur={(e) => lookupCep(e.target.value, 'driver')}
+                        maxLength={9}
+                        className={cepLoading ? 'pr-9' : ''}
+                      />
+                      {cepLoading && (
+                        <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                      )}
+                    </div>
+                    {cepLoading && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Buscando endereço...
+                      </p>
+                    )}
                   </div>
 
                   {/* Rua e Número */}
@@ -1636,6 +1768,121 @@ export function UserMenu() {
                           ))}
                         </SelectContent>
                       </Select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção: Dados Bancários */}
+                <div className="space-y-3 pt-4 border-t border-border">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-primary" />
+                    Dados Bancários
+                  </h4>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="bank_account_name">Nome do Titular</Label>
+                    <Input
+                      id="bank_account_name"
+                      placeholder="Nome completo do titular"
+                      value={driverForm.bank_account_name}
+                      onChange={(e) => setDriverForm({ ...driverForm, bank_account_name: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="income_value">Renda Mensal (R$)</Label>
+                    <Input
+                      id="income_value"
+                      placeholder="0,00"
+                      value={driverForm.income_value}
+                      onChange={(e) => setDriverForm({ ...driverForm, income_value: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="bank_code">Banco</Label>
+                      <Input
+                        id="bank_code"
+                        placeholder="001"
+                        value={driverForm.bank_code}
+                        onChange={(e) => setDriverForm({ ...driverForm, bank_code: e.target.value.replace(/\D/g, '') })}
+                        maxLength={3}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bank_agency">Agência</Label>
+                      <Input
+                        id="bank_agency"
+                        placeholder="0001"
+                        value={driverForm.bank_agency}
+                        onChange={(e) => setDriverForm({ ...driverForm, bank_agency: e.target.value.replace(/\D/g, '') })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bank_account_type">Tipo</Label>
+                      <Select
+                        value={driverForm.bank_account_type}
+                        onValueChange={(value) => setDriverForm({ ...driverForm, bank_account_type: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CONTA_CORRENTE">Corrente</SelectItem>
+                          <SelectItem value="CONTA_POUPANCA">Poupança</SelectItem>
+                          <SelectItem value="CONTA_PAGAMENTO">Pagamento</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2 space-y-2">
+                      <Label htmlFor="bank_account_number">Conta</Label>
+                      <Input
+                        id="bank_account_number"
+                        placeholder="00000000"
+                        value={driverForm.bank_account_number}
+                        onChange={(e) => setDriverForm({ ...driverForm, bank_account_number: e.target.value.replace(/\D/g, '') })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bank_account_digit">Dígito</Label>
+                      <Input
+                        id="bank_account_digit"
+                        placeholder="0"
+                        value={driverForm.bank_account_digit}
+                        onChange={(e) => setDriverForm({ ...driverForm, bank_account_digit: e.target.value.toUpperCase() })}
+                        maxLength={1}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Chave PIX</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Select
+                        value={driverForm.pix_key_type}
+                        onValueChange={(value) => setDriverForm({ ...driverForm, pix_key_type: value, pix_key: '' })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CPF">CPF</SelectItem>
+                          <SelectItem value="CNPJ">CNPJ</SelectItem>
+                          <SelectItem value="EMAIL">E-mail</SelectItem>
+                          <SelectItem value="PHONE">Telefone</SelectItem>
+                          <SelectItem value="EVP">Aleatória</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        id="pix_key"
+                        placeholder="Chave PIX"
+                        value={driverForm.pix_key}
+                        onChange={(e) => setDriverForm({ ...driverForm, pix_key: e.target.value })}
+                      />
                     </div>
                   </div>
                 </div>

@@ -1,5 +1,23 @@
 import { API_BASE_URL, DEBUG_MODE } from '@/config/api.config';
 
+/**
+ * Extrai a mensagem de erro mais específica de uma resposta de API.
+ * Hierarquia: details.errors[] → details.message → error.message → fallback
+ */
+export function extractApiError(data: any, fallback = 'Erro inesperado. Tente novamente.'): string {
+  if (!data) return fallback;
+  const err = data.error ?? data;
+  // Erros de campo (ex: VALIDATION_ERROR com details.errors[])
+  const fieldErrors: any[] = err?.details?.errors ?? [];
+  if (fieldErrors.length > 0) {
+    return fieldErrors.map((e: any) => e.message).filter(Boolean).join('; ');
+  }
+  if (err?.details?.message) return String(err.details.message);
+  if (err?.message) return String(err.message);
+  if (typeof data?.message === 'string') return data.message;
+  return fallback;
+}
+
 const log = {
   info: (...args: any[]) => DEBUG_MODE && console.log('ℹ️', ...args),
   success: (...args: any[]) => DEBUG_MODE && console.log('✅', ...args),
@@ -82,6 +100,54 @@ class ApiService {
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
+  }
+
+  async registerDriverMultipart(formData: FormData): Promise<RegisterDriverResponse> {
+    try {
+      const url = `${this.baseUrl}/api/drivers/register`;
+      log.info('Tentando registrar guincheiro (multipart) em:', url);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        // Não definir Content-Type: o browser define com o boundary correto
+        body: formData,
+      });
+
+      const responseText = await response.text();
+      log.info('Status da resposta:', response.status);
+
+      if (!response.ok) {
+        let errorData: any = {};
+        if (response.headers.get('content-type')?.includes('application/json')) {
+          try { errorData = JSON.parse(responseText); } catch {}
+        }
+        throw new Error(
+          errorData.error?.message ||
+          errorData.message ||
+          `Erro ${response.status}: ${response.statusText}`
+        );
+      }
+
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+        log.success('Cadastro de guincheiro (multipart) bem-sucedido!', result);
+      } catch {
+        throw new Error('A API retornou uma resposta inválida.');
+      }
+
+      return { success: true, ...result };
+    } catch (error) {
+      log.error('Erro no registro multipart de guincheiro:', error);
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        return { success: false, error: 'Não foi possível conectar à API.' };
+      }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+      };
+    }
   }
 
   async registerDriver(data: RegisterDriverData): Promise<RegisterDriverResponse> {
@@ -238,6 +304,37 @@ class ApiService {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Erro desconhecido ao registrar usuário',
+      };
+    }
+  }
+
+  async loginAdmin(email: string, password: string): Promise<LoginResponse> {
+    try {
+      const url = `${this.baseUrl}/api/admin/login`;
+      const response = await fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const responseText = await response.text();
+      let errorData: any = {};
+      if (!response.ok) {
+        try { errorData = JSON.parse(responseText); } catch {}
+        let errorMessage = `Erro ${response.status}: ${response.statusText}`;
+        if (errorData.error?.message) errorMessage = errorData.error.message;
+        else if (typeof errorData.error === 'string') errorMessage = errorData.error;
+        else if (errorData.message) errorMessage = errorData.message;
+        throw new Error(errorMessage);
+      }
+
+      const result = JSON.parse(responseText);
+      return { success: true, ...result };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido ao fazer login',
       };
     }
   }
@@ -574,18 +671,16 @@ class ApiService {
         body: JSON.stringify(data),
       });
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Token expirado ou inválido - limpar autenticação
-          this.clearAuthTokens();
-          localStorage.removeItem('user');
-          localStorage.removeItem('user_data');
-          window.dispatchEvent(new CustomEvent('auth:session-expired'));
-          throw new Error('Sessão expirada. Por favor, faça login novamente.');
-        }
-        throw new Error(`Erro na requisição: ${response.status}`);
+      if (response.status === 401) {
+        this.clearAuthTokens();
+        localStorage.removeItem('user');
+        localStorage.removeItem('user_data');
+        window.dispatchEvent(new CustomEvent('auth:session-expired'));
+        throw new Error('Sessão expirada. Por favor, faça login novamente.');
       }
 
+      // Retorna o corpo JSON mesmo em respostas de erro (400, 422, etc.)
+      // para que o caller possa exibir mensagens detalhadas da API
       return await response.json();
     } catch (error) {
       console.error('Erro na requisição autenticada POST:', error);
@@ -594,59 +689,49 @@ class ApiService {
   }
 
   // Método genérico para fazer requisições autenticadas PUT
-  async authenticatedPut<T>(endpoint: string, data: any): Promise<T | null> {
-    try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        method: 'PUT',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify(data),
-      });
+  async authenticatedPut<T>(endpoint: string, data: any): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      method: 'PUT',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Token expirado ou inválido - limpar autenticação
-          this.clearAuthTokens();
-          localStorage.removeItem('user');
-          localStorage.removeItem('user_data');
-          window.dispatchEvent(new CustomEvent('auth:session-expired'));
-          throw new Error('Sessão expirada. Por favor, faça login novamente.');
-        }
-        throw new Error(`Erro na requisição: ${response.status}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Erro na requisição autenticada PUT:', error);
-      return null;
+    if (response.status === 401) {
+      this.clearAuthTokens();
+      localStorage.removeItem('user');
+      localStorage.removeItem('user_data');
+      window.dispatchEvent(new CustomEvent('auth:session-expired'));
+      throw new Error('Sessão expirada. Por favor, faça login novamente.');
     }
+
+    const json = await response.json().catch(() => ({}) as any);
+    if (!response.ok) {
+      throw new Error(extractApiError(json, `Erro na requisição: ${response.status}`));
+    }
+    return json;
   }
 
   // Método genérico para fazer requisições autenticadas PATCH
-  async authenticatedPatch<T>(endpoint: string, data: any): Promise<T | null> {
-    try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        method: 'PATCH',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify(data),
-      });
+  async authenticatedPatch<T>(endpoint: string, data: any): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      method: 'PATCH',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Token expirado ou inválido - limpar autenticação
-          this.clearAuthTokens();
-          localStorage.removeItem('user');
-          localStorage.removeItem('user_data');
-          window.dispatchEvent(new CustomEvent('auth:session-expired'));
-          throw new Error('Sessão expirada. Por favor, faça login novamente.');
-        }
-        throw new Error(`Erro na requisição: ${response.status}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Erro na requisição autenticada PATCH:', error);
-      return null;
+    if (response.status === 401) {
+      this.clearAuthTokens();
+      localStorage.removeItem('user');
+      localStorage.removeItem('user_data');
+      window.dispatchEvent(new CustomEvent('auth:session-expired'));
+      throw new Error('Sessão expirada. Por favor, faça login novamente.');
     }
+
+    const json = await response.json().catch(() => ({}) as any);
+    if (!response.ok) {
+      throw new Error(extractApiError(json, `Erro na requisição: ${response.status}`));
+    }
+    return json;
   }
 
   // Método genérico para fazer requisições autenticadas DELETE
@@ -791,6 +876,22 @@ class ApiService {
     }
   }
 
+  async getAdminUsers(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    plan_status?: string;
+    is_blocked?: string;
+  } = {}): Promise<any> {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    if (params.search) qs.set('search', params.search);
+    if (params.plan_status) qs.set('plan_status', params.plan_status);
+    if (params.is_blocked !== undefined && params.is_blocked !== '') qs.set('is_blocked', params.is_blocked);
+    return this.authenticatedGet<any>(`/api/admin/users?${qs.toString()}`);
+  }
+
   // Exemplo de uso: Obter perfil do usuário autenticado
   async getProfile(): Promise<ApiUser | null> {
     return this.authenticatedGet<ApiUser>('/api/users/profile');
@@ -819,6 +920,48 @@ class ApiService {
   // Atualizar dados completos do guincheiro (DriverDetails)
   async updateDriverDetails(data: any): Promise<any | null> {
     return this.authenticatedPatch<any>('/api/drivers/me', data);
+  }
+
+  // Alterar senha do usuário
+  async changeUserPassword(currentPassword: string, newPassword: string): Promise<{ success: boolean; error?: any }> {
+    return this.authenticatedPost<any>('/api/users/change-password', { currentPassword, newPassword });
+  }
+
+  // Alterar senha do guincheiro
+  async changeDriverPassword(currentPassword: string, newPassword: string): Promise<{ success: boolean; error?: any }> {
+    return this.authenticatedPost<any>('/api/drivers/change-password', { currentPassword, newPassword });
+  }
+
+  // Gera URL autenticada para imagens privadas em /uploads (adiciona ?token=...)
+  // Converte URLs absolutas para relativas para passar pelo proxy do Vite (evita CORS)
+  getAuthImageUrl(url: string | undefined | null): string | undefined {
+    if (!url) return undefined;
+    // URLs externas (Google, etc.) não contêm /uploads/ — não precisam de token
+    if (!url.includes('/uploads/')) return url;
+    const token = this.getAccessToken();
+    if (!token) return url;
+    // Extrai apenas o pathname para request same-origin via proxy Vite
+    let imgPath = url;
+    try {
+      const parsed = new URL(url);
+      imgPath = parsed.pathname;
+    } catch { /* já é relativa */ }
+    const separator = imgPath.includes('?') ? '&' : '?';
+    return `${imgPath}${separator}token=${encodeURIComponent(token)}`;
+  }
+
+  // Consulta endereço pelo CEP via backend (proxy ViaCEP)
+  async getCep(cep: string): Promise<{ street: string | null; neighborhood: string | null; city: string | null; state: string | null; complement: string | null } | null> {
+    const digits = cep.replace(/\D/g, '');
+    if (digits.length !== 8) return null;
+    try {
+      const res = await fetch(`${this.baseUrl}/api/utils/cep/${digits}`);
+      const json = await res.json();
+      if (json?.success && json?.data) return json.data;
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   // Upload de foto de perfil do guincheiro
@@ -851,7 +994,7 @@ class ApiService {
       const result = await response.json();
       return {
         success: true,
-        photo_url: result.photo_url,
+        photo_url: result.data?.driver?.photo_url || result.photo_url,
       };
     } catch (error) {
       log.error('Erro no upload de foto do guincheiro:', error);
@@ -1015,7 +1158,7 @@ class ApiService {
       const result = await response.json();
       return {
         success: true,
-        photo_url: result.photo_url,
+        photo_url: result.data?.user?.photo_url || result.photo_url,
       };
     } catch (error) {
       log.error('Erro no upload de foto:', error);

@@ -53,6 +53,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isDriver: boolean;
   login: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>;
+  loginAdmin: (email: string, password: string) => Promise<LoginResult>;
   loginAsDriver: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>;
   loginWithGoogle: (idToken: string, rememberMe?: boolean) => Promise<LoginResult>;
   logout: () => void;
@@ -83,6 +84,31 @@ function persistRemove(key: string) {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const GOOGLE_ACCOUNTS_KEY = 'google_saved_accounts';
+
+export interface GoogleSavedAccount {
+  email: string;
+  name: string;
+  photo: string;
+}
+
+function saveGoogleAccountCache(account: GoogleSavedAccount) {
+  const existing: GoogleSavedAccount[] = JSON.parse(localStorage.getItem(GOOGLE_ACCOUNTS_KEY) || '[]');
+  const filtered = existing.filter(a => a.email !== account.email);
+  const updated = [account, ...filtered].slice(0, 5); // máx 5 contas
+  localStorage.setItem(GOOGLE_ACCOUNTS_KEY, JSON.stringify(updated));
+}
+
+export function getGoogleSavedAccounts(): GoogleSavedAccount[] {
+  return JSON.parse(localStorage.getItem(GOOGLE_ACCOUNTS_KEY) || '[]');
+}
+
+export function removeGoogleSavedAccount(email: string) {
+  const existing: GoogleSavedAccount[] = JSON.parse(localStorage.getItem(GOOGLE_ACCOUNTS_KEY) || '[]');
+  const updated = existing.filter(a => a.email !== email);
+  localStorage.setItem(GOOGLE_ACCOUNTS_KEY, JSON.stringify(updated));
+}
 
 // Mock users data
 const mockUsers: User[] = [
@@ -338,6 +364,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginAdmin = async (email: string, password: string): Promise<LoginResult> => {
+    try {
+      const result = await apiService.loginAdmin(email, password);
+      const responseData = (result as any).data;
+      const adminData = responseData?.admin;
+      const token = responseData?.token;
+
+      if (result.success && adminData && token) {
+        apiService.storeAuthTokens(token, undefined, token);
+
+        const adminUser: User = {
+          id: adminData.id.toString(),
+          email: adminData.email,
+          name: adminData.name,
+          type: 'admin',
+          profile: { role: 'admin' } as AdminProfile,
+        };
+
+        setUser(adminUser);
+        persistSet('user', JSON.stringify(adminUser));
+        persistSet('admin_token', token);
+
+        return { success: true };
+      }
+
+      return { success: false, error: result.error || 'Credenciais inválidas' };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
+    }
+  };
+
   const loginAsDriver = async (email: string, password: string, rememberMe?: boolean): Promise<LoginResult> => {
     if (rememberMe) {
       localStorage.setItem('remember_me', 'true');
@@ -475,6 +532,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         persistSet('user_data', JSON.stringify(fullUserData));
 
+        // Salva conta no cache de contas Google para seleção rápida
+        saveGoogleAccountCache({
+          email: userData.email,
+          name: userData.display_name,
+          photo: userData.photo_url || '',
+        });
+
         return { success: true };
       }
 
@@ -529,6 +593,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin,
       isDriver,
       login,
+      loginAdmin,
       loginAsDriver,
       loginWithGoogle,
       logout,

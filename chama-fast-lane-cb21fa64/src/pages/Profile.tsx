@@ -6,9 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
-import { User, CreditCard, Lock, LogOut, ArrowLeft, Truck, MapPin, FileText } from 'lucide-react';
+import { User, CreditCard, Lock, LogOut, ArrowLeft, Truck, MapPin, FileText, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SubscriptionManagement } from '@/components/SubscriptionManagement';
 import { apiService } from '@/services/api';
@@ -46,6 +47,17 @@ interface DriverFormData {
   rg: string;
   issuing_agency: string;
   issuing_state: string;
+
+  // Dados bancários
+  bank_account_name: string;
+  bank_code: string;
+  bank_agency: string;
+  bank_account_number: string;
+  bank_account_digit: string;
+  bank_account_type: string;
+  pix_key_type: string;
+  pix_key: string;
+  income_value: string;
 }
 
 interface ClientFormData {
@@ -54,11 +66,50 @@ interface ClientFormData {
   phone: string;
 }
 
+function formatPhone(value: string): string {
+  const numbers = value.replace(/\D/g, '').slice(0, 11);
+  if (numbers.length <= 10) {
+    return numbers
+      .replace(/(\d{2})(\d)/, '($1) $2')
+      .replace(/(\d{4})(\d)/, '$1-$2');
+  }
+  return numbers
+    .replace(/(\d{2})(\d)/, '($1) $2')
+    .replace(/(\d{5})(\d)/, '$1-$2');
+}
+
+function formatCep(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length > 5) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return digits;
+}
+
+// Converte +5511999999999 ou 11999999999 → (11) 99999-9999
+function parsePhoneDisplay(raw: string): string {
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  // Remove prefixo 55 se vier no formato +55...
+  const local = digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits;
+  return formatPhone(local);
+}
+
 export default function Profile() {
   const { user, isAuthenticated, isDriver, logout } = useAuth();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
   const [planStatus, setPlanStatus] = useState<string | null>(null);
+  const [passwordForm, setPasswordForm] = useState({
+    current: '',
+    next: '',
+    confirm: '',
+  });
+  const [showPasswords, setShowPasswords] = useState({
+    current: false,
+    next: false,
+    confirm: false,
+  });
 
   // Estado para dados do formulário
   const [clientFormData, setClientFormData] = useState<ClientFormData>({
@@ -93,6 +144,15 @@ export default function Profile() {
     rg: '',
     issuing_agency: '',
     issuing_state: '',
+    bank_account_name: '',
+    bank_code: '',
+    bank_agency: '',
+    bank_account_number: '',
+    bank_account_digit: '',
+    bank_account_type: '',
+    pix_key_type: '',
+    pix_key: '',
+    income_value: '',
   });
 
   useEffect(() => {
@@ -118,7 +178,7 @@ export default function Profile() {
             setDriverFormData({
               name: driver.name || '',
               email: driver.email || '',
-              phone: driver.phone || '',
+              phone: parsePhoneDisplay(driver.phone || ''),
               document_type: driver.document_type || '',
               document_number: driver.document_number || '',
               cnh_number: driver.cnh_number || '',
@@ -141,6 +201,15 @@ export default function Profile() {
               rg: details.rg || '',
               issuing_agency: details.issuing_agency || '',
               issuing_state: details.issuing_state || '',
+              bank_account_name: details.bank_account_name || '',
+              bank_code: details.bank_code || '',
+              bank_agency: details.bank_agency || '',
+              bank_account_number: details.bank_account_number || '',
+              bank_account_digit: details.bank_account_digit || '',
+              bank_account_type: details.bank_account_type || '',
+              pix_key_type: details.pix_key_type || '',
+              pix_key: details.pix_key || '',
+              income_value: details.income_value?.toString() || '',
             });
           }
         } else {
@@ -155,7 +224,7 @@ export default function Profile() {
             setClientFormData({
               name: userInfo.display_name || userInfo.name || '',
               email: userInfo.email || '',
-              phone: userInfo.phone_number || '',
+              phone: parsePhoneDisplay(userInfo.phone_number || ''),
             });
           }
         }
@@ -181,16 +250,42 @@ export default function Profile() {
     navigate('/');
   };
 
+  const lookupCep = async (cep: string) => {
+    const digits = cep.replace(/\D/g, '');
+    if (digits.length !== 8) return;
+    setCepLoading(true);
+    try {
+      const data = await apiService.getCep(digits);
+      if (data) {
+        setDriverFormData((prev) => ({
+          ...prev,
+          street: data.street || prev.street,
+          neighborhood: data.neighborhood || prev.neighborhood,
+          city: data.city || prev.city,
+          state: data.state || prev.state,
+          complement: data.complement || prev.complement,
+        }));
+      } else {
+        toast.error('CEP não encontrado');
+      }
+    } catch {
+      toast.error('Erro ao buscar CEP');
+    } finally {
+      setCepLoading(false);
+    }
+  };
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
       if (isDriver) {
+        const driverPhoneDigits = driverFormData.phone.replace(/\D/g, '');
         // Atualizar perfil do motorista via PATCH /api/drivers/me
         await apiService.updateDriverDetails({
           name: driverFormData.name,
-          phone: driverFormData.phone,
+          phone: driverPhoneDigits ? `+55${driverPhoneDigits}` : '',
           document_number: driverFormData.document_number,
           cnh_number: driverFormData.cnh_number,
           cnh_category: driverFormData.cnh_category,
@@ -213,13 +308,23 @@ export default function Profile() {
             rg: driverFormData.rg,
             issuing_agency: driverFormData.issuing_agency,
             issuing_state: driverFormData.issuing_state,
+            bank_account_name: driverFormData.bank_account_name,
+            bank_code: driverFormData.bank_code,
+            bank_agency: driverFormData.bank_agency,
+            bank_account_number: driverFormData.bank_account_number,
+            bank_account_digit: driverFormData.bank_account_digit,
+            bank_account_type: driverFormData.bank_account_type,
+            pix_key_type: driverFormData.pix_key_type,
+            pix_key: driverFormData.pix_key,
+            income_value: driverFormData.income_value,
           },
         });
       } else {
+        const clientPhoneDigits = clientFormData.phone.replace(/\D/g, '');
         // Atualizar perfil do cliente via PATCH /api/users/me
         await apiService.updateUserDetails({
           display_name: clientFormData.name,
-          phone_number: clientFormData.phone,
+          phone_number: clientPhoneDigits ? `+55${clientPhoneDigits}` : '',
         });
       }
 
@@ -229,6 +334,69 @@ export default function Profile() {
       toast.error(error?.message || 'Erro ao atualizar perfil');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const validateNewPassword = (pwd: string): string | null => {
+    if (pwd.length < 8) return 'Mínimo de 8 caracteres';
+    if (!/[A-Z]/.test(pwd)) return 'Inclua pelo menos 1 letra maiúscula';
+    if (!/[a-z]/.test(pwd)) return 'Inclua pelo menos 1 letra minúscula';
+    if (!/\d/.test(pwd)) return 'Inclua pelo menos 1 número';
+    return null;
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!passwordForm.current) {
+      toast.error('Informe a senha atual');
+      return;
+    }
+
+    const pwdError = validateNewPassword(passwordForm.next);
+    if (pwdError) {
+      toast.error(pwdError);
+      return;
+    }
+
+    if (passwordForm.next !== passwordForm.confirm) {
+      toast.error('A confirmação de senha não coincide com a nova senha');
+      return;
+    }
+    if (passwordForm.current === passwordForm.next) {
+      toast.error('A nova senha deve ser diferente da senha atual');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const fn = isDriver
+        ? apiService.changeDriverPassword.bind(apiService)
+        : apiService.changeUserPassword.bind(apiService);
+
+      const result = await fn(passwordForm.current, passwordForm.next) as any;
+
+      if (result?.success) {
+        toast.success('Senha alterada com sucesso!');
+        setPasswordForm({ current: '', next: '', confirm: '' });
+        return;
+      }
+
+      // Extrai mensagens detalhadas do Zod se existirem
+      const errors: { field: string; message: string }[] = result?.error?.errors || [];
+      if (errors.length > 0) {
+        errors.forEach((err) => toast.error(err.message));
+      } else {
+        const code = result?.error?.code;
+        const msg =
+          code === 'PASSWORD_INCORRECT' ? 'Senha atual incorreta' :
+          result?.error?.message || 'Erro ao alterar senha';
+        toast.error(msg);
+      }
+    } catch (error: any) {
+      toast.error(error?.message || 'Erro inesperado ao alterar senha');
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -255,7 +423,7 @@ export default function Profile() {
           {/* Header */}
           <div className="flex flex-col md:flex-row items-start md:items-center gap-6 mb-8">
             <Avatar className="h-24 w-24 border-4 border-primary/20">
-              <AvatarImage src={user.avatar} />
+              <AvatarImage src={apiService.getAuthImageUrl(user.avatar)} />
               <AvatarFallback className="text-2xl font-bold bg-primary text-primary-foreground">
                 {getUserInitials()}
               </AvatarFallback>
@@ -349,12 +517,16 @@ export default function Profile() {
                         <Label htmlFor="phone">Telefone</Label>
                         <Input
                           id="phone"
+                          type="tel"
                           value={isDriver ? driverFormData.phone : clientFormData.phone}
-                          onChange={(e) => isDriver
-                            ? setDriverFormData({ ...driverFormData, phone: e.target.value })
-                            : setClientFormData({ ...clientFormData, phone: e.target.value })
-                          }
+                          onChange={(e) => {
+                            const masked = formatPhone(e.target.value);
+                            isDriver
+                              ? setDriverFormData({ ...driverFormData, phone: masked })
+                              : setClientFormData({ ...clientFormData, phone: masked });
+                          }}
                           placeholder="(00) 00000-0000"
+                          maxLength={15}
                         />
                       </div>
                       {isDriver && (
@@ -548,12 +720,31 @@ export default function Profile() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="postal_code">CEP</Label>
-                          <Input
-                            id="postal_code"
-                            value={driverFormData.postal_code}
-                            onChange={(e) => setDriverFormData({ ...driverFormData, postal_code: e.target.value })}
-                            placeholder="00000-000"
-                          />
+                          <div className="relative">
+                            <Input
+                              id="postal_code"
+                              value={driverFormData.postal_code}
+                              onChange={(e) => {
+                                const masked = formatCep(e.target.value);
+                                setDriverFormData({ ...driverFormData, postal_code: masked });
+                                lookupCep(masked);
+                              }}
+                              onBlur={(e) => lookupCep(e.target.value)}
+                              placeholder="00000-000"
+                              maxLength={9}
+                              className={cepLoading ? 'pr-9 opacity-70' : ''}
+                              disabled={cepLoading}
+                            />
+                            {cepLoading && (
+                              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                            )}
+                          </div>
+                          {cepLoading && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Buscando endereço...
+                            </p>
+                          )}
                         </div>
                         <div className="space-y-2 md:col-span-2">
                           <Label htmlFor="street">Rua/Avenida</Label>
@@ -628,6 +819,137 @@ export default function Profile() {
                   </Card>
                 )}
 
+                {/* Dados Bancários - Apenas para motoristas */}
+                {isDriver && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <CreditCard className="w-5 h-5" />
+                        Dados Bancários
+                      </CardTitle>
+                      <CardDescription>
+                        Informações para recebimento de pagamentos
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_account_name">Nome do Titular</Label>
+                          <Input
+                            id="bank_account_name"
+                            value={driverFormData.bank_account_name}
+                            onChange={(e) => setDriverFormData({ ...driverFormData, bank_account_name: e.target.value })}
+                            placeholder="Nome completo do titular"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="income_value">Renda Mensal (R$)</Label>
+                          <Input
+                            id="income_value"
+                            value={driverFormData.income_value}
+                            onChange={(e) => setDriverFormData({ ...driverFormData, income_value: e.target.value })}
+                            placeholder="0,00"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_code">Código do Banco</Label>
+                          <Input
+                            id="bank_code"
+                            value={driverFormData.bank_code}
+                            onChange={(e) => setDriverFormData({ ...driverFormData, bank_code: e.target.value.replace(/\D/g, '') })}
+                            placeholder="001"
+                            maxLength={3}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_agency">Agência</Label>
+                          <Input
+                            id="bank_agency"
+                            value={driverFormData.bank_agency}
+                            onChange={(e) => setDriverFormData({ ...driverFormData, bank_agency: e.target.value.replace(/\D/g, '') })}
+                            placeholder="0001"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_account_type">Tipo de Conta</Label>
+                          <Select
+                            value={driverFormData.bank_account_type}
+                            onValueChange={(value) => setDriverFormData({ ...driverFormData, bank_account_type: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="CONTA_CORRENTE">Conta Corrente</SelectItem>
+                              <SelectItem value="CONTA_POUPANCA">Conta Poupança</SelectItem>
+                              <SelectItem value="CONTA_PAGAMENTO">Conta Pagamento</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_account_number">Número da Conta</Label>
+                          <Input
+                            id="bank_account_number"
+                            value={driverFormData.bank_account_number}
+                            onChange={(e) => setDriverFormData({ ...driverFormData, bank_account_number: e.target.value.replace(/\D/g, '') })}
+                            placeholder="00000000"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_account_digit">Dígito</Label>
+                          <Input
+                            id="bank_account_digit"
+                            value={driverFormData.bank_account_digit}
+                            onChange={(e) => setDriverFormData({ ...driverFormData, bank_account_digit: e.target.value.toUpperCase() })}
+                            placeholder="0"
+                            maxLength={1}
+                          />
+                        </div>
+                      </div>
+                      <Separator />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="pix_key_type">Tipo de Chave PIX</Label>
+                          <Select
+                            value={driverFormData.pix_key_type}
+                            onValueChange={(value) => setDriverFormData({ ...driverFormData, pix_key_type: value, pix_key: '' })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="CPF">CPF</SelectItem>
+                              <SelectItem value="CNPJ">CNPJ</SelectItem>
+                              <SelectItem value="EMAIL">E-mail</SelectItem>
+                              <SelectItem value="PHONE">Telefone</SelectItem>
+                              <SelectItem value="EVP">Chave Aleatória</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="pix_key">Chave PIX</Label>
+                          <Input
+                            id="pix_key"
+                            value={driverFormData.pix_key}
+                            onChange={(e) => setDriverFormData({ ...driverFormData, pix_key: e.target.value })}
+                            placeholder={
+                              driverFormData.pix_key_type === 'CPF' ? '000.000.000-00' :
+                              driverFormData.pix_key_type === 'CNPJ' ? '00.000.000/0000-00' :
+                              driverFormData.pix_key_type === 'EMAIL' ? 'email@exemplo.com' :
+                              driverFormData.pix_key_type === 'PHONE' ? '(00) 00000-0000' :
+                              'Chave aleatória'
+                            }
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* Botão Salvar */}
                 <div className="flex justify-end">
                   <Button type="submit" disabled={isLoading} size="lg">
@@ -648,25 +970,98 @@ export default function Profile() {
             <TabsContent value="security">
               <Card>
                 <CardHeader>
-                  <CardTitle>Segurança da Conta</CardTitle>
+                  <CardTitle>Alterar Senha</CardTitle>
                   <CardDescription>
-                    Altere sua senha e gerencie a segurança da conta
+                    Use uma senha forte com pelo menos 8 caracteres
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="current-password">Senha Atual</Label>
-                    <Input id="current-password" type="password" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="new-password">Nova Senha</Label>
-                    <Input id="new-password" type="password" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="confirm-password">Confirmar Nova Senha</Label>
-                    <Input id="confirm-password" type="password" />
-                  </div>
-                  <Button>Alterar Senha</Button>
+                <CardContent>
+                  <form onSubmit={handleChangePassword} className="space-y-4">
+                    {/* Senha atual */}
+                    <div className="space-y-2">
+                      <Label htmlFor="current-password">Senha Atual</Label>
+                      <div className="relative">
+                        <Input
+                          id="current-password"
+                          type={showPasswords.current ? 'text' : 'password'}
+                          value={passwordForm.current}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })}
+                          placeholder="••••••••"
+                          autoComplete="current-password"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPasswords({ ...showPasswords, current: !showPasswords.current })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showPasswords.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Nova senha */}
+                    <div className="space-y-2">
+                      <Label htmlFor="new-password">Nova Senha</Label>
+                      <div className="relative">
+                        <Input
+                          id="new-password"
+                          type={showPasswords.next ? 'text' : 'password'}
+                          value={passwordForm.next}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, next: e.target.value })}
+                          placeholder="••••••••"
+                          autoComplete="new-password"
+                          minLength={8}
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPasswords({ ...showPasswords, next: !showPasswords.next })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showPasswords.next ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      {passwordForm.next.length > 0 && (() => {
+                        const err = validateNewPassword(passwordForm.next);
+                        return err ? <p className="text-xs text-destructive">{err}</p> : null;
+                      })()}
+                    </div>
+
+                    {/* Confirmar nova senha */}
+                    <div className="space-y-2">
+                      <Label htmlFor="confirm-password">Confirmar Nova Senha</Label>
+                      <div className="relative">
+                        <Input
+                          id="confirm-password"
+                          type={showPasswords.confirm ? 'text' : 'password'}
+                          value={passwordForm.confirm}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })}
+                          placeholder="••••••••"
+                          autoComplete="new-password"
+                          minLength={8}
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showPasswords.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      {passwordForm.confirm.length > 0 && passwordForm.next !== passwordForm.confirm && (
+                        <p className="text-xs text-destructive">As senhas não coincidem</p>
+                      )}
+                      {passwordForm.confirm.length > 0 && passwordForm.next === passwordForm.confirm && passwordForm.next.length >= 8 && (
+                        <p className="text-xs text-green-600 dark:text-green-400">Senhas coincidem ✓</p>
+                      )}
+                    </div>
+
+                    <Button type="submit" disabled={isChangingPassword}>
+                      {isChangingPassword ? 'Alterando...' : 'Alterar Senha'}
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
             </TabsContent>

@@ -1,36 +1,43 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mail, Lock, Eye, EyeOff, Phone, FileText, Truck, User, CreditCard, Car, Calendar, Palette } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Phone, FileText, Truck, User, ChevronRight } from "lucide-react";
 import logoChama from "@/assets/logo-chama365.png";
 import { apiService } from "@/services/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
-type UserType = "cliente" | "guincheiro" | null;
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: any) => void;
+          renderButton: (element: HTMLElement, config: any) => void;
+        };
+      };
+    };
+  }
+}
 
-const tiposVeiculo = [
-  { value: "Reboque", label: "Reboque" },
-  { value: "Pesado", label: "Pesado" },
-  { value: "Plataforma", label: "Plataforma" },
-];
+type UserType = "cliente" | "guincheiro" | null;
 
 const Cadastro = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const planCode = searchParams.get('plan');
   const { toast } = useToast();
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [userType, setUserType] = useState<UserType>("cliente");
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -40,15 +47,49 @@ const Cadastro = () => {
     confirmPassword: "",
   });
 
-  // Guincheiro specific data
-  const [guincheiro, setGuincheiro] = useState({
-    cnh: "",
-    placa: "",
-    modelo: "",
-    ano: "",
-    tipo: "",
-    cor: "",
-  });
+  const googleButtonRef = useRef<HTMLDivElement>(null);
+
+  const handleGoogleCredentialResponse = useCallback(async (response: any) => {
+    setGoogleLoading(true);
+    try {
+      const result = await loginWithGoogle(response.credential);
+      if (result.success) {
+        toast({ title: "Conta Google vinculada!", description: "Redirecionando..." });
+        setTimeout(() => {
+          if (planCode && (planCode === 'BASICO' || planCode === 'INTERMEDIARIO')) {
+            navigate(`/planos/checkout/${planCode}`);
+          } else {
+            navigate("/");
+          }
+        }, 1000);
+      } else {
+        const msg = result.error?.message || result.error || "Erro ao entrar com Google.";
+        toast({ title: "Erro", description: msg, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Erro", description: "Erro ao conectar com Google.", variant: "destructive" });
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, [loginWithGoogle, navigate, planCode, toast]);
+
+  useEffect(() => {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!clientId || !window.google || !googleButtonRef.current) return;
+
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback: handleGoogleCredentialResponse,
+    });
+    window.google.accounts.id.renderButton(googleButtonRef.current, {
+      theme: 'outline',
+      size: 'large',
+      width: googleButtonRef.current.offsetWidth || 320,
+      text: 'continue_with',
+      locale: 'pt-BR',
+    });
+  }, [handleGoogleCredentialResponse, userType]);
+
 
 
   const formatPhone = (value: string) => {
@@ -79,13 +120,42 @@ const Cadastro = () => {
     }
   };
 
-  const formatPlaca = (value: string) => {
-    const cleaned = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    if (cleaned.length <= 7) {
-      // Formato Mercosul: ABC1D23
-      return cleaned.slice(0, 7);
-    }
-    return value;
+  const isValidCPF = (cpf: string): boolean => {
+    if (cpf.length !== 11) return false;
+    if (/^(\d)\1{10}$/.test(cpf)) return false;
+
+    let sum = 0;
+    for (let i = 0; i < 9; i++) sum += parseInt(cpf[i]) * (10 - i);
+    let d1 = (sum * 10) % 11;
+    if (d1 === 10) d1 = 0;
+    if (d1 !== parseInt(cpf[9])) return false;
+
+    sum = 0;
+    for (let i = 0; i < 10; i++) sum += parseInt(cpf[i]) * (11 - i);
+    let d2 = (sum * 10) % 11;
+    if (d2 === 10) d2 = 0;
+
+    return d2 === parseInt(cpf[10]);
+  };
+
+  const isValidCNPJ = (cnpj: string): boolean => {
+    if (cnpj.length !== 14) return false;
+    if (/^(\d)\1{13}$/.test(cnpj)) return false;
+
+    const weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    let sum = 0;
+    for (let i = 0; i < 12; i++) sum += parseInt(cnpj[i]) * weights1[i];
+    let d1 = sum % 11;
+    d1 = d1 < 2 ? 0 : 11 - d1;
+    if (d1 !== parseInt(cnpj[12])) return false;
+
+    const weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    sum = 0;
+    for (let i = 0; i < 13; i++) sum += parseInt(cnpj[i]) * weights2[i];
+    let d2 = sum % 11;
+    d2 = d2 < 2 ? 0 : 11 - d2;
+
+    return d2 === parseInt(cnpj[13]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -95,6 +165,54 @@ const Cadastro = () => {
       toast({
         title: "Termos não aceitos",
         description: "Você precisa aceitar os Termos de Uso e Política de Privacidade",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email.trim())) {
+      toast({
+        title: "E-mail inválido",
+        description: "Informe um e-mail válido",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const phoneDigits = formData.phone.replace(/\D/g, "");
+    if (phoneDigits.length < 10) {
+      toast({
+        title: "Telefone inválido",
+        description: "Informe um telefone válido com DDD",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const docDigits = formData.document.replace(/\D/g, "");
+    if (docDigits.length === 11) {
+      if (!isValidCPF(docDigits)) {
+        toast({
+          title: "CPF inválido",
+          description: "O CPF informado não é válido",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else if (docDigits.length === 14) {
+      if (!isValidCNPJ(docDigits)) {
+        toast({
+          title: "CNPJ inválido",
+          description: "O CNPJ informado não é válido",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      toast({
+        title: "CPF/CNPJ inválido",
+        description: "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido",
         variant: "destructive",
       });
       return;
@@ -127,63 +245,15 @@ const Cadastro = () => {
 
       // Remover formatação do documento (apenas números)
       const documentNumbers = formData.document.replace(/\D/g, "");
-      const documentType = documentNumbers.length <= 11 ? "CPF" : "CNPJ";
 
-      if (userType === "guincheiro") {
-        // Preparar dados do guincheiro no formato esperado pela API
-        const driverData = {
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-          phone: phoneNumbers, // Apenas números, sem +55
-          cpf: documentNumbers, // Apenas números, sem formatação
-          cnh_number: guincheiro.cnh,
-          vehicle_plate: guincheiro.placa,
-          vehicle_model: guincheiro.modelo,
-          vehicle_year: parseInt(guincheiro.ano) || new Date().getFullYear(),
-          vehicle_type: guincheiro.tipo, // Enviar com primeira letra maiúscula: Reboque, Pesado ou Plataforma
-          vehicle_color: guincheiro.cor,
-        };
-
-        console.log("Enviando dados do guincheiro:", driverData);
-
-        const result = await apiService.registerDriver(driverData);
-
-        if (result.success) {
-          // Acessar dados dentro de result.data se existir
-          const responseData = (result as any).data;
-          const driver = responseData?.driver || result.driver;
-
-          // Armazenar dados do guincheiro
-          if (driver) {
-            localStorage.setItem('driver_data', JSON.stringify(driver));
-          }
-
-          toast({
-            title: "Cadastro realizado com sucesso!",
-            description: "Seu cadastro está em análise. Você receberá uma notificação quando for aprovado.",
-          });
-
-          setTimeout(() => {
-            navigate("/login");
-          }, 2000);
-        } else {
-          // Extrair mensagem de erro da resposta da API
-          const errorMessage = result.error?.message || result.error || "Não foi possível realizar o cadastro. Tente novamente.";
-          toast({
-            title: "Erro no cadastro",
-            description: errorMessage,
-            variant: "destructive",
-          });
-        }
-      } else {
+      {
         // Cadastro de usuário comum
         const registerData = {
           email: formData.email,
           password: formData.password,
           phone_number: internationalPhone,
           display_name: formData.name,
-          cpf_cnpj: formData.document,
+          cpf_cnpj: documentNumbers,
         };
 
         console.log("Enviando dados:", registerData);
@@ -278,15 +348,6 @@ const Cadastro = () => {
     }
   };
 
-  const handleGoogleRegister = () => {
-    if (!userType) {
-      alert("Por favor, selecione o tipo de conta primeiro");
-      return;
-    }
-    // TODO: Implement Google OAuth registration
-    console.log("Google register clicked", { userType });
-  };
-
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 py-8">
       <div className="w-full max-w-md space-y-6">
@@ -343,6 +404,49 @@ const Cadastro = () => {
             </div>
           </div>
 
+          {/* Guincheiro: redireciona para o cadastro completo em 6 etapas */}
+          {userType === "guincheiro" && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 space-y-3">
+                <div className="flex items-center gap-2 text-primary font-semibold">
+                  <Truck className="h-5 w-5" />
+                  Cadastro completo de Guincheiro
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  O cadastro de guincheiro é feito em <strong>6 etapas</strong> e inclui:
+                </p>
+                <ul className="text-sm text-muted-foreground space-y-1 list-none">
+                  {[
+                    "Dados da conta",
+                    "Dados pessoais (CPF, CNH, renda)",
+                    "Endereço completo",
+                    "Dados do veículo",
+                    "Dados bancários e Pix",
+                    "Envio de fotos (CNH, CRLV, selfie)",
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-primary/20 text-primary text-xs flex items-center justify-center font-bold flex-shrink-0">
+                        {i + 1}
+                      </span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <Button
+                type="button"
+                className="w-full"
+                size="lg"
+                onClick={() => navigate("/cadastro/guincheiro")}
+              >
+                Iniciar cadastro de guincheiro
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          )}
+
+          {/* Cliente: formulário direto */}
+          {userType === "cliente" && (
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Nome */}
             <div className="space-y-2">
@@ -413,121 +517,6 @@ const Cadastro = () => {
                 />
               </div>
             </div>
-
-            {/* Guincheiro Specific Fields */}
-            {userType === "guincheiro" && (
-              <div className="space-y-4 pt-4 border-t border-border">
-                <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Truck className="h-5 w-5 text-primary" />
-                  Dados do Veículo
-                </h3>
-
-                {/* CNH */}
-                <div className="space-y-2">
-                  <Label htmlFor="cnh">Número da CNH</Label>
-                  <div className="relative">
-                    <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="cnh"
-                      type="text"
-                      placeholder="00000000000"
-                      className="pl-10"
-                      value={guincheiro.cnh}
-                      onChange={(e) => setGuincheiro({ ...guincheiro, cnh: e.target.value.replace(/\D/g, "").slice(0, 11) })}
-                      maxLength={11}
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Placa */}
-                <div className="space-y-2">
-                  <Label htmlFor="placa">Placa do Veículo</Label>
-                  <div className="relative">
-                    <Car className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="placa"
-                      type="text"
-                      placeholder="ABC1D23"
-                      className="pl-10 uppercase"
-                      value={guincheiro.placa}
-                      onChange={(e) => setGuincheiro({ ...guincheiro, placa: formatPlaca(e.target.value) })}
-                      maxLength={7}
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Modelo e Ano */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="modelo">Modelo</Label>
-                    <Input
-                      id="modelo"
-                      type="text"
-                      placeholder="Ex: Ford F-4000"
-                      value={guincheiro.modelo}
-                      onChange={(e) => setGuincheiro({ ...guincheiro, modelo: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="ano">Ano</Label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="ano"
-                        type="text"
-                        placeholder="2020"
-                        className="pl-10"
-                        value={guincheiro.ano}
-                        onChange={(e) => setGuincheiro({ ...guincheiro, ano: e.target.value.replace(/\D/g, "").slice(0, 4) })}
-                        maxLength={4}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tipo e Cor */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="tipo">Tipo de Guincho</Label>
-                    <Select
-                      value={guincheiro.tipo}
-                      onValueChange={(value) => setGuincheiro({ ...guincheiro, tipo: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {tiposVeiculo.map((tipo) => (
-                          <SelectItem key={tipo.value} value={tipo.value}>
-                            {tipo.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cor">Cor</Label>
-                    <div className="relative">
-                      <Palette className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="cor"
-                        type="text"
-                        placeholder="Ex: Branco"
-                        className="pl-10"
-                        value={guincheiro.cor}
-                        onChange={(e) => setGuincheiro({ ...guincheiro, cor: e.target.value })}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            )}
 
             {/* Password */}
             <div className="space-y-2">
@@ -604,56 +593,47 @@ const Cadastro = () => {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={!userType || isLoading}
+              disabled={isLoading}
             >
               {isLoading ? "Criando conta..." : "Criar conta"}
             </Button>
           </form>
+          )}
 
-          {/* Divider */}
-          <div className="relative my-6">
-            <Separator />
-            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-2 text-xs text-muted-foreground">
-              ou continue com
-            </span>
-          </div>
+          {/* Divider e Google — só exibe para cliente */}
+          {userType === "cliente" && (
+            <>
+              <div className="relative my-6">
+                <Separator />
+                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-2 text-xs text-muted-foreground">
+                  ou continue com
+                </span>
+              </div>
 
-          {/* Google Register */}
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            size="lg"
-            onClick={handleGoogleRegister}
-          >
-            <svg className="h-5 w-5 mr-2" viewBox="0 0 24 24">
-              <path
-                fill="currentColor"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="currentColor"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="currentColor"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-              />
-              <path
-                fill="currentColor"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-              />
-            </svg>
-            Continuar com Google
-          </Button>
+              <div ref={googleButtonRef} className="w-full flex justify-center" />
+              {googleLoading && (
+                <p className="text-sm text-muted-foreground text-center">Autenticando com Google...</p>
+              )}
+              {!import.meta.env.VITE_GOOGLE_CLIENT_ID && (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  Login com Google indisponível (VITE_GOOGLE_CLIENT_ID não configurado)
+                </p>
+              )}
 
-          {/* Login Link */}
-          <p className="text-center text-sm text-muted-foreground mt-6">
-            Já tem uma conta?{" "}
-            <Link to="/login" className="text-primary font-medium hover:underline">
-              Entre aqui
-            </Link>
-          </p>
+              <p className="text-center text-sm text-muted-foreground mt-6">
+                Já tem uma conta?{" "}
+                <Link to="/login" className="text-primary font-medium hover:underline">
+                  Entre aqui
+                </Link>
+              </p>
+            </>
+          )}
+
+          {!userType && (
+            <p className="text-center text-sm text-muted-foreground py-4">
+              Selecione o tipo de conta acima para continuar.
+            </p>
+          )}
         </div>
       </div>
     </div>

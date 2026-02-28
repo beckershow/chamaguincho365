@@ -10,7 +10,7 @@ import logoChama from "@/assets/logo-chama365.png";
 
 const AdminLogin = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { loginAdmin } = useAuth();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -23,7 +23,7 @@ const AdminLogin = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    const result = await login(formData.email, formData.password);
+    const result = await loginAdmin(formData.email, formData.password);
     if (result.success) {
       toast({
         title: "Login de administrador realizado!",
