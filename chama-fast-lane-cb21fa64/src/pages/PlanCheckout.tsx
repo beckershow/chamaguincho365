@@ -178,7 +178,13 @@ export default function PlanCheckout() {
         } else {
           toast.error('Não foi possível carregar o QR Code. Tente novamente.');
         }
-      } catch {
+      } catch (err: any) {
+        // PIX expirado ou deletado no Asaas (ApiError.code === 'PIX_EXPIRED')
+        if (err?.code === 'PIX_EXPIRED' || err?.message?.includes('expirou')) {
+          toast.error('Este PIX expirou. Um novo será gerado no próximo ciclo de cobrança.');
+          navigate(-1);
+          return;
+        }
         toast.error('Erro ao carregar QR Code PIX.');
       } finally {
         setIsLoading(false);
