@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   Clock,
   ExternalLink,
+  QrCode,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -37,8 +38,9 @@ import {
   type PlanCode,
 } from '@/services/subscriptionService';
 import { apiService } from '@/services/api';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, startOfDay, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { getPlanBlockInfo } from '@/utils/planStatus';
 
 const PLAN_NAMES: Record<string, string> = {
   BASICO: 'Basico',
@@ -54,9 +56,13 @@ export function SubscriptionManagement() {
   const navigate = useNavigate();
   const [subscription, setSubscription] = useState<MySubscriptionResponse | null>(null);
   const [realPlanStatus, setRealPlanStatus] = useState<string | null>(null);
+  const [planReactivatedAt, setPlanReactivatedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isChangingPlan, setIsChangingPlan] = useState(false);
+
+  // PIX pendente (renovação ou nova assinatura)
+  const [pendingPix, setPendingPix] = useState<{ asaas_payment_id: string; value: number; due_date: string } | null>(null);
 
   const handleChangePlan = async (targetPlan: PlanCode) => {
     const s = subscription?.local;
@@ -101,6 +107,11 @@ export function SubscriptionManagement() {
       const status = planRes?.plan_status ?? null;
       console.log('[SubscriptionManagement] plan-status endpoint:', planRes, '-> effectiveStatus:', status);
       setRealPlanStatus(status);
+      setPlanReactivatedAt(planRes?.plan_reactivated_at ?? null);
+
+      // Busca PIX pendente (renovação ou nova assinatura)
+      const pixRes = await apiService.getPendingPixPayment().catch(() => null);
+      setPendingPix(pixRes?.payment ?? null);
     } catch (error: any) {
       console.error('Erro ao carregar assinatura:', error);
       if (error instanceof ApiError && error.isAuthError) {
@@ -145,6 +156,7 @@ export function SubscriptionManagement() {
       ACTIVE: { label: 'Ativo', variant: 'default' },
       PENDING: { label: 'Pendente', variant: 'secondary' },
       OVERDUE: { label: 'Vencido', variant: 'destructive' },
+      PAST_DUE: { label: 'Inadimplente', variant: 'destructive' },
       CANCELLED: { label: 'Cancelado', variant: 'outline' },
       EXPIRED: { label: 'Expirado', variant: 'outline' },
       INACTIVE: { label: 'Inativo', variant: 'outline' },
@@ -306,8 +318,33 @@ export function SubscriptionManagement() {
   const isCooldown = effectiveStatus === 'COOLDOWN';
   const isExpired = (effectiveStatus === 'EXPIRED' || effectiveStatus === 'INACTIVE') && !hasPendingPayment;
 
+  const blockInfo = getPlanBlockInfo(effectiveStatus);
+  const showBlockedBanner = blockInfo.severity === 'blocked' && !isPending;
+
+  // PIX só mostra se due_date for hoje ou no futuro
+  const pixDueDate = pendingPix?.due_date ? parseISO(pendingPix.due_date) : null;
+  const pixVencido = pixDueDate ? isBefore(startOfDay(pixDueDate), startOfDay(new Date())) : true;
+  const showPixBanner = !!pendingPix && !isCancelled && !isExpired && !pixVencido;
+
   return (
     <div className="space-y-6">
+      {/* Banner de plano bloqueado — PAST_DUE / OVERDUE / EXPIRED / INACTIVE */}
+      {showBlockedBanner && (
+        <Card className="border-red-500/50 bg-red-50 dark:bg-red-950/20">
+          <CardContent className="flex items-center gap-3 py-4">
+            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium text-red-800 dark:text-red-200">
+                Plano bloqueado — {blockInfo.label}
+              </p>
+              <p className="text-sm text-red-600 dark:text-red-400">
+                {blockInfo.description}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Status banners */}
       {isPending && (
         <Card className="border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/20">
@@ -354,9 +391,38 @@ export function SubscriptionManagement() {
             <div>
               <p className="font-medium text-blue-800 dark:text-blue-200">Pagamento recebido</p>
               <p className="text-sm text-blue-600 dark:text-blue-400">
-                Acesso sera liberado em breve.
+                {planReactivatedAt
+                  ? `Acesso será liberado em até 48 horas a partir da data de pagamento. Previsão: ${format(parseISO(planReactivatedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}.`
+                  : 'Acesso será liberado em até 48 horas a partir da data de pagamento.'}
               </p>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Banner PIX pendente — aparece para nova assinatura OU renovação mensal (não para cancelados/expirados/vencidos) */}
+      {showPixBanner && (
+        <Card className="border-green-500/50 bg-green-50 dark:bg-green-950/20">
+          <CardContent className="flex items-center gap-3 py-4">
+            <QrCode className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium text-green-800 dark:text-green-200">
+                PIX aguardando pagamento
+              </p>
+              <p className="text-sm text-green-600 dark:text-green-400">
+                Vencimento: {format(parseISO(pendingPix.due_date), 'dd/MM/yyyy', { locale: ptBR })}
+                {' · '}
+                R$ {Number(pendingPix.value).toFixed(2).replace('.', ',')}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 text-white gap-2 flex-shrink-0"
+              onClick={() => navigate(`/planos/checkout/${subscription?.local?.plan_code ?? 'BASICO'}?paymentId=${pendingPix.asaas_payment_id}&value=${pendingPix.value}`)}
+            >
+              <QrCode className="w-4 h-4" />
+              Ver QR Code
+            </Button>
           </CardContent>
         </Card>
       )}

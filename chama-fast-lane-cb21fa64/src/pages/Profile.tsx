@@ -323,8 +323,8 @@ export default function Profile() {
         const clientPhoneDigits = clientFormData.phone.replace(/\D/g, '');
         // Atualizar perfil do cliente via PATCH /api/users/me
         await apiService.updateUserDetails({
-          display_name: clientFormData.name,
-          phone_number: clientPhoneDigits ? `+55${clientPhoneDigits}` : '',
+          ...(clientFormData.name?.trim() && { display_name: clientFormData.name.trim() }),
+          ...(clientPhoneDigits ? { phone_number: `+55${clientPhoneDigits}` } : {}),
         });
       }
 

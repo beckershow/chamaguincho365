@@ -8,10 +8,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
-    allowedHosts: [
-      "27de-2804-30c-4044-c700-f1fa-a20c-5c3a-414.ngrok-free.app",
-      "4c46-2804-30c-1f14-af00-5424-625d-cc27-e026.ngrok-free.app"
-    ],
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       '/uploads': {
         target: 'http://localhost:3000',

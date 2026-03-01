@@ -45,6 +45,9 @@ export interface User {
 interface LoginResult {
   success: boolean;
   error?: string;
+  requiresRegistration?: boolean;
+  requiresProfileCompletion?: boolean;
+  prefill?: { name: string; email: string };
 }
 
 interface AuthContextType {
@@ -56,6 +59,7 @@ interface AuthContextType {
   loginAdmin: (email: string, password: string) => Promise<LoginResult>;
   loginAsDriver: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>;
   loginWithGoogle: (idToken: string, rememberMe?: boolean) => Promise<LoginResult>;
+  loginDriverWithGoogle: (idToken: string, rememberMe?: boolean) => Promise<LoginResult>;
   logout: () => void;
   updateProfile: (data: Partial<User>) => void;
   // Mock data for admin
@@ -539,12 +543,123 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           photo: userData.photo_url || '',
         });
 
+        // Usuário novo (sem telefone ou CPF): precisa completar o cadastro
+        if (!userData.phone_number || !userData.cpf_cnpj) {
+          return {
+            success: true,
+            requiresProfileCompletion: true,
+            prefill: { name: userData.display_name, email: userData.email },
+          };
+        }
+
         return { success: true };
       }
 
       return { success: false, error: result.error };
     } catch (error) {
       console.error('Erro no login com Google:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
+    }
+  };
+
+  const loginDriverWithGoogle = async (idToken: string, rememberMe?: boolean): Promise<LoginResult> => {
+    if (rememberMe) {
+      localStorage.setItem('remember_me', 'true');
+    } else {
+      localStorage.removeItem('remember_me');
+    }
+
+    try {
+      const result = await apiService.loginDriverWithGoogle(idToken);
+
+      const responseData = (result as any).data;
+      const driver = responseData?.driver || result.driver;
+      const accessToken = responseData?.accessToken || result.accessToken;
+      const refreshToken = responseData?.refreshToken || result.refreshToken;
+      const token = responseData?.token || result.token;
+
+      // Backend retorna requires_registration quando o motorista ainda não tem cadastro
+      if (result.success && responseData?.requires_registration) {
+        return {
+          success: false,
+          requiresRegistration: true,
+          prefill: responseData.prefill,
+        };
+      }
+
+      // Backend retorna pending_approval quando o motorista está em análise
+      if (result.success && responseData?.pending_approval) {
+        return {
+          success: false,
+          error: 'Conta em análise. Aguarde a aprovação.',
+        };
+      }
+
+      if (result.success && driver) {
+        apiService.storeAuthTokens(accessToken, refreshToken, token);
+
+        // Carregar dados completos do guincheiro via /api/drivers/me
+        const driverDetailsResponse = await apiService.getDriverDetails();
+        const driverDetailsData = (driverDetailsResponse as any)?.data?.driver || driverDetailsResponse?.driver || driver;
+
+        const vehicleType = driverDetailsData.vehicle_type || '';
+
+        const loggedUser: User = {
+          id: driverDetailsData.id?.toString() || '',
+          email: driverDetailsData.email,
+          name: driverDetailsData.name || '',
+          avatar: driverDetailsData.photo_url || undefined,
+          type: 'motorista',
+          profile: {
+            whatsapp: driverDetailsData.phone || '',
+            cidade: '',
+            estado: '',
+            possuiCaminhao: driverDetailsData.vehicle_plate ? 'sim' : 'nao',
+            tiposGuincho: vehicleType ? [vehicleType] : [],
+            disponibilidade: driverDetailsData.is_available ? '24h' : 'indisponivel',
+            areaAtuacao: 100,
+            observacoes: '',
+            status: driverDetailsData.status === 'APPROVED' ? 'aprovado' : 'pendente',
+          } as MotoristaProfile,
+          cpf_cnpj: driverDetailsData.document_number,
+          phone_number: driverDetailsData.phone,
+          createdAt: driverDetailsData.created_at,
+        };
+
+        setUser(loggedUser);
+        persistSet('user', JSON.stringify(loggedUser));
+        persistSet('user_type', 'driver');
+
+        const fullDriverData = {
+          ...driverDetailsData,
+          vehicle: {
+            plate: driverDetailsData.vehicle_plate,
+            model: driverDetailsData.vehicle_model,
+            type: driverDetailsData.vehicle_type,
+            year: driverDetailsData.vehicle_year,
+            color: driverDetailsData.vehicle_color,
+          },
+          cnh: {
+            number: driverDetailsData.cnh_number,
+            category: driverDetailsData.cnh_category,
+            expiry: driverDetailsData.cnh_expiry,
+          },
+        };
+        persistSet('driver_data', JSON.stringify(fullDriverData));
+
+        // Salva conta no cache de contas Google para seleção rápida
+        saveGoogleAccountCache({
+          email: driverDetailsData.email,
+          name: driverDetailsData.name || '',
+          photo: driverDetailsData.photo_url || '',
+        });
+
+        return { success: true };
+      }
+
+      return { success: false, error: result.error };
+    } catch (error) {
+      console.error('Erro no login de guincheiro com Google:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
     }
   };
@@ -596,6 +711,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginAdmin,
       loginAsDriver,
       loginWithGoogle,
+      loginDriverWithGoogle,
       logout,
       updateProfile,
       allUsers,

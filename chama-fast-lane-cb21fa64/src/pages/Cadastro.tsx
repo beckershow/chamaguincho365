@@ -31,7 +31,7 @@ const Cadastro = () => {
   const [searchParams] = useSearchParams();
   const planCode = searchParams.get('plan');
   const { toast } = useToast();
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, loginDriverWithGoogle } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [userType, setUserType] = useState<UserType>("cliente");
@@ -48,22 +48,33 @@ const Cadastro = () => {
   });
 
   const googleButtonRef = useRef<HTMLDivElement>(null);
+  const userTypeRef = useRef<UserType>(userType);
+  userTypeRef.current = userType;
 
   const handleGoogleCredentialResponse = useCallback(async (response: any) => {
     setGoogleLoading(true);
     try {
-      const result = await loginWithGoogle(response.credential);
-      if (result.success) {
+      const isDriver = userTypeRef.current === "guincheiro";
+      const result = isDriver
+        ? await loginDriverWithGoogle(response.credential)
+        : await loginWithGoogle(response.credential);
+      if (result.requiresProfileCompletion) {
+        toast({ title: "Quase lá!", description: "Complete seu cadastro para acessar a plataforma." });
+        setTimeout(() => navigate("/cadastro/completar", { state: { prefill: result.prefill, planCode } }), 800);
+      } else if (result.requiresRegistration) {
+        toast({ title: "Complete seu cadastro", description: "Preencha as informações de guincheiro para continuar." });
+        setTimeout(() => navigate("/cadastro/guincheiro", { state: { googlePrefill: result.prefill } }), 800);
+      } else if (result.success) {
         toast({ title: "Conta Google vinculada!", description: "Redirecionando..." });
         setTimeout(() => {
-          if (planCode && (planCode === 'BASICO' || planCode === 'INTERMEDIARIO')) {
+          if (!isDriver && planCode && (planCode === 'BASICO' || planCode === 'INTERMEDIARIO')) {
             navigate(`/planos/checkout/${planCode}`);
           } else {
             navigate("/");
           }
         }, 1000);
       } else {
-        const msg = result.error?.message || result.error || "Erro ao entrar com Google.";
+        const msg = (result.error as any)?.message || result.error || "Erro ao entrar com Google.";
         toast({ title: "Erro", description: msg, variant: "destructive" });
       }
     } catch {
@@ -71,7 +82,7 @@ const Cadastro = () => {
     } finally {
       setGoogleLoading(false);
     }
-  }, [loginWithGoogle, navigate, planCode, toast]);
+  }, [loginWithGoogle, loginDriverWithGoogle, navigate, planCode, toast]);
 
   useEffect(() => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -442,6 +453,30 @@ const Cadastro = () => {
                 Iniciar cadastro de guincheiro
                 <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
+
+              <div className="relative my-6">
+                <Separator />
+                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-2 text-xs text-muted-foreground">
+                  ou continue com
+                </span>
+              </div>
+
+              <div ref={googleButtonRef} className="w-full flex justify-center" />
+              {googleLoading && (
+                <p className="text-sm text-muted-foreground text-center">Autenticando com Google...</p>
+              )}
+              {!import.meta.env.VITE_GOOGLE_CLIENT_ID && (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  Login com Google indisponível (VITE_GOOGLE_CLIENT_ID não configurado)
+                </p>
+              )}
+
+              <p className="text-center text-sm text-muted-foreground mt-6">
+                Já tem uma conta?{" "}
+                <Link to="/login" className="text-primary font-medium hover:underline">
+                  Entre aqui
+                </Link>
+              </p>
             </div>
           )}
 

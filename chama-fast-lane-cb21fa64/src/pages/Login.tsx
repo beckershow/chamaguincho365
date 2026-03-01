@@ -34,7 +34,7 @@ type LoginType = "cliente" | "guincheiro";
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login, loginAsDriver, loginWithGoogle } = useAuth();
+  const { login, loginAsDriver, loginWithGoogle, loginDriverWithGoogle } = useAuth();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -45,6 +45,8 @@ const Login = () => {
   // Google
   const googleButtonRef = useRef<HTMLDivElement>(null);
   const newAccountButtonRef = useRef<HTMLDivElement>(null);
+  const loginTypeRef = useRef<LoginType>(loginType);
+  loginTypeRef.current = loginType;
   const [googleLoading, setGoogleLoading] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState<GoogleSavedAccount[]>([]);
   // Quando true, mostra o botão Google para "nova conta" em vez dos cards
@@ -59,14 +61,22 @@ const Login = () => {
     async (response: any) => {
       setGoogleLoading(true);
       try {
-        const result = await loginWithGoogle(response.credential, rememberMe);
-        if (result.success) {
+        const result = loginTypeRef.current === "guincheiro"
+          ? await loginDriverWithGoogle(response.credential, rememberMe)
+          : await loginWithGoogle(response.credential, rememberMe);
+        if (result.requiresProfileCompletion) {
+          setSavedAccounts(getGoogleSavedAccounts());
+          toast({ title: "Quase lá!", description: "Complete seu cadastro para acessar a plataforma." });
+          setTimeout(() => navigate("/cadastro/completar", { state: { prefill: result.prefill } }), 800);
+        } else if (result.requiresRegistration) {
+          toast({ title: "Cadastro necessário", description: "Complete seu cadastro de guincheiro para continuar." });
+          setTimeout(() => navigate("/cadastro/guincheiro", { state: { googlePrefill: result.prefill } }), 800);
+        } else if (result.success) {
           toast({ title: "Login realizado com sucesso!", description: "Você será redirecionado..." });
-          // Atualiza a lista de contas após login
           setSavedAccounts(getGoogleSavedAccounts());
           setTimeout(() => navigate("/"), 1000);
         } else {
-          const msg = result.error?.message || result.error || "Erro ao fazer login com Google.";
+          const msg = (result.error as any)?.message || result.error || "Erro ao fazer login com Google.";
           toast({ title: "Erro no login", description: msg, variant: "destructive" });
         }
       } catch {
@@ -76,7 +86,7 @@ const Login = () => {
         setShowNewAccountButton(false);
       }
     },
-    [loginWithGoogle, rememberMe, navigate, toast]
+    [loginWithGoogle, loginDriverWithGoogle, rememberMe, navigate, toast]
   );
 
   // Inicializa e renderiza o botão Google padrão (sem hint)

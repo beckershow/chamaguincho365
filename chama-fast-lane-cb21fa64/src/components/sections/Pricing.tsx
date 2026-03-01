@@ -164,8 +164,6 @@ export function Pricing() {
                 </h4>
                 <div className="flex flex-wrap gap-2">
                   <span className="px-3 py-1.5 text-xs font-medium rounded-full bg-muted-foreground text-primary-foreground">Pix</span>
-                  <span className="px-3 py-1.5 text-xs font-medium rounded-full text-primary-foreground bg-muted-foreground">Debito</span>
-                  <span className="px-3 py-1.5 text-xs font-medium rounded-full bg-muted-foreground text-primary-foreground">Credito</span>
                 </div>
               </div>
             </div>

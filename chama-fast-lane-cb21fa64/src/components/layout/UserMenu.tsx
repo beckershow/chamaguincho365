@@ -735,12 +735,17 @@ export function UserMenu() {
         }
       }
 
+      // Converter telefone para formato E.164
+      const phoneDigits = clienteForm.whatsapp.replace(/\D/g, '');
+      const phoneLocal = phoneDigits.startsWith('55') && phoneDigits.length > 11 ? phoneDigits.slice(2) : phoneDigits;
+      const phoneE164 = phoneLocal ? `+55${phoneLocal}` : '';
+
       // Atualizar via API com a estrutura correta
       const updateData = {
         name: clienteForm.name,
         display_name: clienteForm.name,
         email: user.email,
-        phone_number: clienteForm.whatsapp,
+        phone_number: phoneE164,
         cpf_cnpj: clienteForm.cpf_cnpj.replace(/\D/g, ''),
         details: {
           birth_date: birthDateISO,
@@ -763,7 +768,7 @@ export function UserMenu() {
         // Atualizar o contexto local com todos os dados
         const updatedUserData: Partial<typeof user> = {
           name: clienteForm.name,
-          phone_number: clienteForm.whatsapp,
+          phone_number: phoneE164,
           cpf_cnpj: clienteForm.cpf_cnpj,
           profile: updateData.details as any,
         };

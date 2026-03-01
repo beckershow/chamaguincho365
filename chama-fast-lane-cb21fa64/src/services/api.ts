@@ -588,7 +588,7 @@ class ApiService {
   }
 
   // Consulta o status do plano em tempo real via API
-  async fetchPlanStatus(): Promise<{ plan_status: string; plan_code: string | null } | null> {
+  async fetchPlanStatus(): Promise<{ plan_status: string; plan_code: string | null; plan_reactivated_at: string | null } | null> {
     try {
       const accessToken = this.getAccessToken();
       const response = await fetch(`${this.baseUrl}/api/users/plan-status`, {
@@ -607,8 +607,9 @@ class ApiService {
       // Suporta { plan_status } ou { data: { plan_status } }
       const plan_status = data.plan_status || data.data?.plan_status || null;
       const plan_code = data.plan_code || data.data?.plan_code || null;
+      const plan_reactivated_at = data.plan_reactivated_at || data.data?.plan_reactivated_at || null;
 
-      return { plan_status, plan_code };
+      return { plan_status, plan_code, plan_reactivated_at };
     } catch (error) {
       log.error('Erro ao buscar plan-status:', error);
       return null;
@@ -808,6 +809,53 @@ class ApiService {
     }
   }
 
+  async loginDriverWithGoogle(idToken: string): Promise<LoginResponse> {
+    try {
+      const url = `${this.baseUrl}/api/drivers/login/google`;
+      log.info('Tentando login de guincheiro com Google em:', url);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ id_token: idToken }),
+      });
+
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        let errorData: any = {};
+        if (response.headers.get('content-type')?.includes('application/json')) {
+          try { errorData = JSON.parse(responseText); } catch {}
+        }
+        let errorMessage = `Erro ${response.status}: ${response.statusText}`;
+        if (errorData.error?.message) errorMessage = errorData.error.message;
+        else if (typeof errorData.error === 'string') errorMessage = errorData.error;
+        else if (errorData.message) errorMessage = errorData.message;
+        throw new Error(errorMessage);
+      }
+
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+        log.success('Login de guincheiro com Google bem-sucedido!', result);
+      } catch {
+        throw new Error('Resposta inválida da API.');
+      }
+
+      return { success: true, ...result };
+    } catch (error) {
+      log.error('Erro no login de guincheiro com Google:', error);
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        return { success: false, error: 'Não foi possível conectar à API.' };
+      }
+      return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
+    }
+  }
+
   async getDriversPendingIssues(): Promise<any> {
     return this.authenticatedGet<any>('/api/drivers/pending-issues');
   }
@@ -873,6 +921,69 @@ class ApiService {
       return URL.createObjectURL(blob);
     } catch {
       return null;
+    }
+  }
+
+  async getAdminDrivers(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+    is_blocked?: string;
+  } = {}): Promise<any> {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    if (params.search) qs.set('search', params.search);
+    if (params.status) qs.set('status', params.status);
+    if (params.is_blocked !== undefined && params.is_blocked !== '') qs.set('is_blocked', params.is_blocked);
+    return this.authenticatedGet<any>(`/api/admin/drivers?${qs.toString()}`);
+  }
+
+  async getAdminDriverDetails(driverId: number): Promise<any> {
+    return this.authenticatedGet<any>(`/api/admin/drivers/${driverId}`);
+  }
+
+  async adminBlockUser(userId: string, reason: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      const accessToken = this.getAccessToken();
+      const response = await fetch(`${this.baseUrl}/api/admin/users/${userId}/block`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ reason }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const msg = data.error?.message || data.message || (typeof data.error === 'string' ? data.error : `Erro ${response.status}`);
+        return { success: false, message: msg };
+      }
+      return { success: true, message: data.message };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Erro de conexão' };
+    }
+  }
+
+  async adminUnblockUser(userId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      const accessToken = this.getAccessToken();
+      const response = await fetch(`${this.baseUrl}/api/admin/users/${userId}/unblock`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const msg = data.error?.message || data.message || (typeof data.error === 'string' ? data.error : `Erro ${response.status}`);
+        return { success: false, message: msg };
+      }
+      return { success: true, message: data.message };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Erro de conexão' };
     }
   }
 
@@ -1126,6 +1237,16 @@ class ApiService {
         error: error instanceof Error ? error.message : 'Erro desconhecido ao enviar Selfie',
       };
     }
+  }
+
+  // Retorna o pagamento PIX PENDING mais recente do usuário (para exibir QR Code)
+  async getPendingPixPayment(): Promise<{ success: boolean; payment: { asaas_payment_id: string; value: number; due_date: string; created_at: string } | null } | null> {
+    return this.authenticatedGet('/api/asaas/subscriptions/me/pending-pix');
+  }
+
+  // Retorna o QR Code PIX de um pagamento específico
+  async getPixQrCode(paymentId: string): Promise<{ success: boolean; paymentId: string; encodedImage: string; payload: string; expirationDate: string } | null> {
+    return this.authenticatedGet(`/api/asaas/payments/${paymentId}/qrcode`);
   }
 
   // Upload de foto de perfil

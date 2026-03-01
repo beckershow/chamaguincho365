@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -94,6 +94,7 @@ function validateCPF(cpf: string): boolean {
 
 export default function PlanCheckout() {
   const { planCode } = useParams<{ planCode: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, isAuthenticated, isDriver } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
@@ -105,6 +106,10 @@ export default function PlanCheckout() {
   // PIX inline data
   const [pixData, setPixData] = useState<{ qrCode: string; payload: string; value: number } | null>(null);
   const [pixPaymentId, setPixPaymentId] = useState<string | null>(null);
+
+  // Modo renovação: paymentId e value vêm via query param
+  const renewalPaymentId = searchParams.get('paymentId');
+  const renewalValue = parseFloat(searchParams.get('value') ?? '0');
 
   // Credit card fields (never persisted)
   const [cardNumber, setCardNumber] = useState('');
@@ -154,6 +159,35 @@ export default function PlanCheckout() {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, []);
+
+  // Modo renovação: carrega QR Code diretamente para um paymentId existente
+  useEffect(() => {
+    if (!renewalPaymentId || !isAuthenticated) return;
+
+    const loadRenewalQr = async () => {
+      setIsLoading(true);
+      try {
+        const res = await subscriptionService.getPaymentPixQrCode(renewalPaymentId);
+        if (res?.encodedImage && res?.payload) {
+          const img = res.encodedImage.startsWith('data:')
+            ? res.encodedImage
+            : `data:image/png;base64,${res.encodedImage}`;
+          setPixData({ qrCode: img, payload: res.payload, value: res.value ?? renewalValue });
+          setPixPaymentId(renewalPaymentId);
+          startPolling(renewalPaymentId);
+        } else {
+          toast.error('Não foi possível carregar o QR Code. Tente novamente.');
+        }
+      } catch {
+        toast.error('Erro ao carregar QR Code PIX.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadRenewalQr();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renewalPaymentId, isAuthenticated]);
 
   const plan = validPlanCode ? PLAN_INFO[validPlanCode] : null;
 
@@ -548,13 +582,14 @@ export default function PlanCheckout() {
                           <QrCode className="w-4 h-4" />
                           <div>
                             <p className="font-medium">PIX</p>
-                            <p className="text-xs text-muted-foreground">Aprovacao instantanea</p>
+                            <p className="text-xs text-muted-foreground">Aprovação em 48 horas após pagamento</p>
                           </div>
                         </div>
                         <Badge variant="secondary">Recomendado</Badge>
                       </div>
                     </Label>
                   </div>
+                  {/* TODO: Habilitar futuramente
                   <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-accent cursor-pointer">
                     <RadioGroupItem value="BOLETO" id="boleto" />
                     <Label htmlFor="boleto" className="flex-1 cursor-pointer">
@@ -579,11 +614,12 @@ export default function PlanCheckout() {
                       </div>
                     </Label>
                   </div>
+                  */}
                 </RadioGroup>
               </CardContent>
             </Card>
 
-            {/* Formulario de Cartao de Credito */}
+            {/* TODO: Habilitar formulário de Cartão de Crédito futuramente
             {billingType === 'CREDIT_CARD' && (
               <>
                 <Card>
@@ -732,6 +768,7 @@ export default function PlanCheckout() {
                 </Card>
               </>
             )}
+            */}
 
             {/* Botao Finalizar */}
             <Button
@@ -805,14 +842,18 @@ export default function PlanCheckout() {
                 <div className="p-3 bg-muted rounded-lg">
                   <div className="flex items-center gap-2 mb-1">
                     {billingType === 'PIX' && <QrCode className="w-4 h-4" />}
+                    {/* TODO: Habilitar futuramente
                     {billingType === 'BOLETO' && <Landmark className="w-4 h-4" />}
                     {billingType === 'CREDIT_CARD' && <CreditCard className="w-4 h-4" />}
+                    */}
                     <span className="text-sm font-medium">Pagamento</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {billingType === 'PIX' && 'Pagamento via PIX - Aprovacao instantanea'}
+                    {billingType === 'PIX' && 'Aprovação em 48 horas após pagamento'}
+                    {/* TODO: Habilitar futuramente
                     {billingType === 'BOLETO' && 'Boleto Bancário - Aprovação em até 3 dias úteis'}
                     {billingType === 'CREDIT_CARD' && 'Cartao de Credito - Cobranca recorrente'}
+                    */}
                   </p>
                 </div>
               </CardContent>

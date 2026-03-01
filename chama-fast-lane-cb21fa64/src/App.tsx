@@ -14,6 +14,7 @@ import EsqueciSenha from "./pages/EsqueciSenha";
 import CadastroCliente from "./pages/CadastroCliente";
 import CadastroAssociado from "./pages/CadastroAssociado";
 import CadastroGuincheiro from "./pages/CadastroGuincheiro";
+import CadastroCompletarCliente from "./pages/CadastroCompletarCliente";
 import Obrigado from "./pages/Obrigado";
 import Profile from "./pages/Profile";
 import PlanCheckout from "./pages/PlanCheckout";
@@ -39,6 +40,7 @@ const App = () => (
           <Route path="/cadastro/cliente" element={<CadastroCliente />} />
           <Route path="/cadastro/associado" element={<CadastroAssociado />} />
           <Route path="/cadastro/guincheiro" element={<CadastroGuincheiro />} />
+          <Route path="/cadastro/completar" element={<CadastroCompletarCliente />} />
           <Route path="/obrigado" element={<Obrigado />} />
           <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/planos/checkout/:planCode" element={<ProtectedRoute><PlanCheckout /></ProtectedRoute>} />
